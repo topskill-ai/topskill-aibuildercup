@@ -62,6 +62,18 @@ def test_grounding_web_sources_queries_and_entry_point() -> None:
     assert sources[2].title == "Example page" and sources[2].domain == "example.com"
 
 
+def test_web_sources_with_the_same_label_and_domain_are_one_chip() -> None:
+    c = Collector()
+    r = "https://vertexaisearch.cloud.google.com/grounding-api-redirect/"
+    c.add_grounding(_gm([(r + "a", "arbeitsagentur.de"), (r + "b", "make-it-in-germany.com")], []))
+    c.add_grounding(_gm([(r + "c", "arbeitsagentur.de"), (r + "d", "Blue Card thresholds 2026")], []))
+    assert [(s.n, s.title) for s in c.sources()] == [
+        (1, "arbeitsagentur.de"),
+        (2, "make-it-in-germany.com"),
+        (3, "Blue Card thresholds 2026"),
+    ]
+
+
 def test_grounding_ignores_non_web_chunks() -> None:
     c = Collector()
     gm = types.GroundingMetadata(

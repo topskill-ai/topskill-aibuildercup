@@ -3,7 +3,8 @@
 * Knowledge passages returned by ``search_knowledge`` are numbered ``1, 2, …`` in arrival order; a passage
   already numbered in this turn keeps its number (key ``(file_id, page_start, text[:80])``), so the
   ``[n]`` markers the model writes stay valid across several searches.
-* Web sources from ``grounding_metadata.grounding_chunks[].web`` are deduplicated by ``uri`` and numbered
+* Web sources from ``grounding_metadata.grounding_chunks[].web`` are deduplicated by ``uri`` and by
+  ``(title, domain)`` (Google's redirect URIs differ per chunk even for one site), and numbered
   after every knowledge passage (they are listed, not inline-marked), so their numbers are assigned when
   :meth:`Collector.sources` is called.
 * ``search_entry_point_html`` is the ``rendered_content`` of the last grounding metadata that had one.
@@ -80,6 +81,8 @@ class Collector:
             domain = getattr(web, "domain", None) or (web.title if web.title and "." in web.title else None)
             domain = domain or _domain_of(web.uri)
             title = web.title or domain or web.uri
+            if (title, domain) in self._web.values():
+                continue  # same label and domain (e.g. two redirect URIs to one site): one chip
             self._web[web.uri] = (title, domain)
         entry = gm.search_entry_point
         if entry is not None and entry.rendered_content:

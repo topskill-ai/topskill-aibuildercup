@@ -1159,7 +1159,7 @@ Synthetic web tool lines are emitted as `tool_start` immediately followed by `to
 
 ### 7.3 Citations
 - Knowledge passages returned by `search_knowledge` are numbered `n = 1, 2, …` per turn (a passage already numbered keeps its number when retrieved again — key `(file_id, page_start, text[:80])`). The tool output shows them as `[n] «filename» p. X–Y`, and the system prompt tells the model to cite inline as `[n]`.
-- Web sources from `grounding_metadata.grounding_chunks[].web` get numbers after the knowledge ones (deduplicated by `uri`). They are listed, not inline-marked (offsets differ under bypass mode).
+- Web sources from `grounding_metadata.grounding_chunks[].web` get numbers after the knowledge ones (deduplicated by `uri`, and by `(title, domain)`: Google's redirect URIs differ per chunk, so two chunks of one site would otherwise show as two identical chips). They are listed, not inline-marked (offsets differ under bypass mode).
 - `Citation.title`: knowledge → filename; web → `web.title` (on Vertex this is usually the domain). `uri`: knowledge → null; web → the `vertexaisearch…grounding-api-redirect` URL (open in new tab). `domain`: web domain. `snippet`: knowledge passage text clipped to 300 chars.
 - `search_entry_point_html` = `grounding_metadata.search_entry_point.rendered_content` from the last event that had it. The UI MUST display it (Google grounding display rules) inside a sandboxed `<iframe srcdoc sandbox="allow-popups allow-popups-to-escape-sandbox">` under the answer.
 - Only sources actually returned in this turn are listed; the frontend renders `[n]` markers as superscript buttons only when `n` matches a knowledge citation, otherwise as plain text.
