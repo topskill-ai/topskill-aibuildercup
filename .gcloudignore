@@ -1,0 +1,26 @@
+# Cloud Build upload filter. The build source is the repo root (SPEC 13.2) so that
+# deploy/backend.Dockerfile and deploy/env/prod.env.yaml are inside /workspace;
+# the Docker build context itself is backend/.
+#!include:.gitignore
+
+.git/
+.gitignore
+.github/
+.firebase/
+docs/
+
+# Only the backend image is built in Cloud Build; the web app is deployed to Hosting separately.
+web/
+web/node_modules/
+web/dist/
+
+backend/.venv/
+backend/.data/
+backend/.pytest_cache/
+backend/.ruff_cache/
+backend/tests/
+**/__pycache__/
+**/.env
+**/.env.*
+!**/.env.example
+*.pem

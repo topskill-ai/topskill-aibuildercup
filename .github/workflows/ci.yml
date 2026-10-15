@@ -1,0 +1,107 @@
+# Tests only (owner decision D3: no keyless deploys from CI; deploys run from the laptop with
+# deploy/scripts/deploy_backend.sh and deploy_web.sh).
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect:
+    name: detect packages
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.check.outputs.backend }}
+      web: ${{ steps.check.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          echo "backend=$([ -f backend/pyproject.toml ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "web=$([ -f web/package.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+  deploy-config:
+    name: deploy config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate JSON / YAML
+        run: |
+          python3 -c "import json; [json.load(open(f)) for f in ('firebase.json', '.firebaserc', 'firestore.indexes.json')]"
+          python3 -c "import yaml, sys; [yaml.safe_load(open(f)) for f in sys.argv[1:]]" \
+            deploy/cloudbuild.yaml deploy/env/prod.env.yaml .github/workflows/ci.yml
+      - name: prod.env.yaml has no dev settings
+        run: |
+          if grep -nE '^(AUTH_DEV_BYPASS|FIRESTORE_EMULATOR_HOST|FIREBASE_AUTH_EMULATOR_HOST|MANDATE_SIGNING_KEY|GEMINI_API_KEY)\b' deploy/env/prod.env.yaml; then
+            echo "prod.env.yaml must not contain dev settings or secrets"; exit 1
+          fi
+          grep -qE '^ENV: "prod"$' deploy/env/prod.env.yaml
+      - name: shellcheck
+        run: shellcheck -S warning deploy/scripts/*.sh
+
+  backend:
+    name: backend
+    needs: detect
+    if: needs.detect.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.9.9"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install firebase-tools
+        run: npm install -g firebase-tools@15
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Lint
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Tests (Firestore + Auth emulators, project demo-topskill)
+        env:
+          EMU_LANE: ci
+        run: ../deploy/scripts/emu_exec.sh 8080 9099 4400 4500 -- uv run pytest -m "not live"
+
+  web:
+    name: web
+    needs: detect
+    if: needs.detect.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
