@@ -129,7 +129,12 @@ export function KnowledgeTab({ agent }: { agent: Agent }) {
       setToDelete(null);
       refresh();
     },
-    onError: (err) => toastApiError(err, "Could not remove the file"),
+    onError: (err) => {
+      toastApiError(err, "Could not remove the file");
+      // A 503 keeps the file as failed ("Deleting failed. Please try again."): show it so the
+      // creator can retry from the row.
+      refresh();
+    },
   });
 
   const files = list.data?.items ?? [];

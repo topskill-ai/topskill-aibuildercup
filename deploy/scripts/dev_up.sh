@@ -10,6 +10,7 @@
 # Backend dev settings are set here explicitly (process env wins over backend/.env):
 #   ENV=dev AUTH_DEV_BYPASS=true FIRESTORE_PROJECT=demo-topskill STORAGE_BACKEND=local
 #   KNOWLEDGE_BACKEND=${KNOWLEDGE_BACKEND:-local} LLM_MODE=${LLM_MODE:-live}
+#   MANDATE_KEY_FILE=${MANDATE_KEY_FILE:-.data/mandate_ed25519.pem} (auto-generated dev key)
 # Gemini runs on Vertex via your ADC login (gcloud auth application-default login). For
 # KNOWLEDGE_BACKEND=file_search put GEMINI_API_KEY into the git-ignored backend/.env, or run with
 # DEV_FETCH_GEMINI_KEY=1 to read it from Secret Manager into this process only (never printed).
@@ -75,6 +76,8 @@ if [[ "${RUN_BACKEND}" == 1 ]]; then
     export STORAGE_BACKEND=local KNOWLEDGE_BACKEND="${KNOWLEDGE_BACKEND:-local}"
     export PUBLIC_API_BASE="http://127.0.0.1:${API_PORT}" PUBLIC_WEB_BASE="http://localhost:${WEB_PORT}"
     export CORS_ORIGINS="http://localhost:${WEB_PORT},http://127.0.0.1:${WEB_PORT}"
+    # Dev mandate key: an Ed25519 PEM is generated at this path (relative to backend/) when missing.
+    export MANDATE_KEY_FILE="${MANDATE_KEY_FILE:-.data/mandate_ed25519.pem}"
     if [[ "${DEV_FETCH_GEMINI_KEY:-0}" == 1 && -z "${GEMINI_API_KEY:-}" ]]; then
       GEMINI_API_KEY="$(gcloud secrets versions access latest --secret gemini-api-key --project top-skill)"
       export GEMINI_API_KEY
