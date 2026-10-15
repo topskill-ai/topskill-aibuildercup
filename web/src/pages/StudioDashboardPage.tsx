@@ -100,10 +100,6 @@ export default function StudioDashboardPage() {
                 </span>
               }
             />
-            <Link to="/studio/new" className={buttonClasses({ className: "max-sm:hidden" })}>
-              <Plus aria-hidden className="h-4 w-4" />
-              Publish a skill
-            </Link>
           </>
         }
       />
@@ -124,7 +120,7 @@ export default function StudioDashboardPage() {
           icon={<CalendarDays />}
           loading={loading}
           value={<Money cents={d?.earned_7d_cents ?? 0} unit={false} />}
-          hint={d ? `${formatCredits(d.earned_total_cents)} all time` : undefined}
+          hint={d ? `All time: ${formatCredits(d.earned_total_cents)}` : undefined}
         />
         <Stat label="Paid rounds" icon={<Activity />} loading={loading} value={formatNumber(d?.paid_rounds ?? 0)} hint="web visitors" />
         <Stat
@@ -170,10 +166,12 @@ export default function StudioDashboardPage() {
           <CardHeader
             title="Your agents"
             actions={
-              <Link to="/studio/new" className={buttonClasses({ variant: "outline", size: "sm" })}>
-                <Plus aria-hidden className="h-4 w-4" />
-                New agent
-              </Link>
+              d && d.agents.length > 0 ? (
+                <Link to="/studio/new" className={buttonClasses({ variant: "outline", size: "sm" })}>
+                  <Plus aria-hidden className="h-4 w-4" />
+                  Publish a skill
+                </Link>
+              ) : null
             }
           />
           <div className="pt-3">

@@ -25,7 +25,7 @@ export function StudioLayout() {
           </NavLink>
           <Link to="/studio/new" className={buttonClasses({ size: "sm", className: "ml-auto" })}>
             <Plus aria-hidden className="h-4 w-4" />
-            New agent
+            Publish a skill
           </Link>
         </div>
       </div>
