@@ -107,7 +107,7 @@ Key architecture decisions (each backed by a probe):
 4. **Knowledge = Vertex AI RAG Engine** (one corpus per agent, `asia-southeast1`) queried by **our own `search_knowledge` function tool** via REST `retrieveContexts`, which returns `pageSpan` → page-level citations. Gemini File Search is not available on Vertex and the Developer API path is blocked by billing (probe). A `local` knowledge backend (in-Firestore chunks, simple term-frequency scorer) is the dev/test backend and the production fallback if RAG Engine is turned off.
 5. **Web grounding = built-in `google_search`** tool. On `gemini-3-*` it coexists with function tools; on `gemini-2.5-*` we use `GoogleSearchTool(bypass_multi_tools_limit=True)` (probe).
 6. **Billing settles at the end of a turn inside one Firestore transaction** together with the persisted messages ("persisted ⇒ billed"). Failed turns (no visible text) and turns actually interrupted by a stop/disconnect are saved but never charged or counted; a stop that arrives after the model finished does not change the outcome (§7.4).
-7. **A2A**: FastAPI routes `/a2a/{slug}` + `/a2a/{slug}/.well-known/agent-card.json` backed by a cached per-agent `JsonRpcDispatcher` + a `TopSkillA2aExecutor` (subclass of ADK `A2aAgentExecutor`) stack (mounting `to_a2a` sub-apps does not work — probe). Mandate verified in the route (HTTP 402 on failure); charge in `after_agent` only on `TASK_STATE_COMPLETED`; every other exit path (exception, cancel, timeout, dispatcher rejection) settles the reserved call as failed and not charged (§9.1).
+7. **A2A**: FastAPI routes `/a2a/{slug}` + `/a2a/{slug}/.well-known/agent-card.json` backed by a cached per-agent `JsonRpcDispatcher` + a `TopSkillA2aExecutor` (subclass of ADK `A2aAgentExecutor`) stack (mounting `to_a2a` sub-apps does not work — probe). Mandate verified in the route (HTTP 402 on failure); charge in `after_agent` only on `TASK_STATE_COMPLETED`; every other exit path (exception, timeout, dispatcher rejection) settles the reserved call as failed and not charged (§9.1). `CancelTask` is rejected by the route (§9.3); the executor's `cancel()` still charges a call whose answer text was already emitted.
 8. **Mandates are platform-issued Ed25519 JWS** (`alg: EdDSA`), private key in Secret Manager, public key at `/.well-known/jwks.json`. See §8.6 for justification.
 9. **Uploads go through the backend** (multipart → GCS). No signed URLs (they would need an IAM signBlob grant). Downloads (avatars, CSV) are served by the backend.
 
@@ -1116,7 +1116,7 @@ Accepted: `.pdf .txt .md .csv .docx`; ≤ 10 MB/file; ≤ 20 files/agent.
 |---|---|---|---|
 | GET | `/api/public/a2a/directory` | public | `?q=` → `{items: DirectoryAgent[]}` (listed/active/not-deleted query from §5.3; `pricing.a2a_enabled` filtered **in memory**; keyword score over title/tagline/description/capability names; top 8) |
 | GET | `/a2a/{slug}/.well-known/agent-card.json` | public | A2A v1.0 Agent Card (§9.2). 404/410 as JSON envelope |
-| POST | `/a2a/{slug}` | mandate | A2A JSON-RPC 2.0. **Paid methods (MUST)**: `SendMessage`, `SendStreamingMessage` (v0.3 `message/send`, `message/stream` via compat). **Read methods [SHOULD]**: `GetTask`, `CancelTask`, `ListTasks`, `SubscribeToTask` (v0.3 `tasks/get`, `tasks/cancel`, `tasks/resubscribe`) — mandate verified, never reserved or charged. Everything else → `-32601`. Mandate via `X-AP2-Mandate` header **or** `params.metadata.ap2_mandate`. Failures → HTTP 400/402/404/410 with a JSON-RPC error body (§9.3) |
+| POST | `/a2a/{slug}` | mandate | A2A JSON-RPC 2.0. **Paid methods (MUST)**: `SendMessage`, `SendStreamingMessage` (v0.3 `message/send`, `message/stream` via compat). **Read methods [SHOULD]**: `GetTask`, `ListTasks`, `SubscribeToTask` (v0.3 `tasks/get`, `tasks/resubscribe`) — mandate verified, never reserved or charged. `CancelTask` / `tasks/cancel` → HTTP 409, JSON-RPC `-32002` (TaskNotCancelable, `data.code = "validation_error"`): a caller that already has the answer text must not be able to cancel its own paid task to avoid the charge. Everything else → `-32601`. Mandate via `X-AP2-Mandate` header **or** `params.metadata.ap2_mandate`. Failures → HTTP 400/402/404/410 with a JSON-RPC error body (§9.3) |
 
 #### Enterprise Assistant demo [a2a]
 | Method | Path | Auth | Request | Response | Errors |
@@ -1384,9 +1384,15 @@ async def cancel(self, context, event_queue) -> None:
         await super().cancel(context, event_queue)
     finally:
         if (cid := self._call_for_task.get(context.task_id)):
-            await billing.settle_a2a_call(call_id=cid, succeeded=False, model=None,
-                                          answer_preview="", error_code="canceled")
+            st = self._state_for_task.get(context.task_id)
+            if st and "".join(st.answer_parts).strip():   # the caller already has the answer: charged
+                await billing.settle_a2a_call(call_id=cid, succeeded=True, model=st.model,
+                                              answer_preview="\n".join(st.answer_parts)[:300])
+            else:
+                await billing.settle_a2a_call(call_id=cid, succeeded=False, model=None,
+                                              answer_preview="", error_code="canceled")
 ```
+The route rejects `CancelTask` for paid calls (§9.3), so `cancel()` is a defence in depth only.
 - `_before(exec_ctx)`: from `_CALL`, store `task_id → call_id` in `self._call_for_task` and update `a2a_calls/{call_id}.task_id`.
 - `_after_event(exec_ctx, event)`: append the text of each `TaskArtifactUpdateEvent` / status message to `CallState.answer_parts` (the COMPLETED final event carries no text).
 - `_after(exec_ctx, final_event)` (`exec_ctx` is the ADK `ExecutorContext`: app_name, user_id, session_id, runner — not the RequestContext): `billing.settle_a2a_call(call_id, succeeded=final_event.status.state == TaskState.TASK_STATE_COMPLETED, model=…, answer_preview="".join(answer_parts)[:300])`, then `CallState.settled = True`. If `answer_parts` is empty, fall back to the last model event text via `exec_ctx.runner.session_service.get_session(app_name=…, user_id=…, session_id=…)`. Exceptions inside `_after` are logged, never raised.
@@ -1417,6 +1423,7 @@ Serialized with the a2a-sdk helper (`agent_card_to_dict`) at `GET /a2a/{slug}/.w
 ```python
 PAID = {"SendMessage", "SendStreamingMessage", "message/send", "message/stream"}
 READ = {"GetTask", "CancelTask", "ListTasks", "SubscribeToTask", "tasks/get", "tasks/cancel", "tasks/resubscribe"}
+CANCEL = {"CancelTask", "tasks/cancel"}              # → -32002 TaskNotCancelable, HTTP 409 (no free answers)
 
 @router.post("/a2a/{slug}")
 async def a2a_rpc(slug: str, request: Request):

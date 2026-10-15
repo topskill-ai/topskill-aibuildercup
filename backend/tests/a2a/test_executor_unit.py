@@ -115,3 +115,48 @@ async def test_a2a_runtime_agent_uses_portable_thinking_budget() -> None:
     llm_agent = await build_runtime_agent(agent, await get_active_version(agent), channel="a2a")
     thinking = llm_agent.generate_content_config.thinking_config
     assert thinking.thinking_budget is not None and thinking.thinking_level is None
+
+
+class _Queue:
+    def __init__(self) -> None:
+        self.events: list = []
+
+    async def enqueue_event(self, event) -> None:
+        self.events.append(event)
+
+
+@pytest.mark.parametrize(
+    ("parts", "succeeded", "error_code"), [(["the answer"], True, None), ([], False, "canceled")]
+)
+async def test_cancel_after_answer_text_is_charged(monkeypatch, parts, succeeded, error_code) -> None:
+    """Defence behind the route's CancelTask rejection: a cancel after visible answer text settles the
+    call as succeeded; before any text, as failed (not charged)."""
+    from google.adk.agents import LlmAgent
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+
+    from tests.a2a.fakes import ScriptedLlm
+    from topskill.a2a import executor as ex
+
+    settled: list[dict] = []
+
+    async def record(call_id, **kw):
+        settled.append({"call_id": call_id, **kw})
+
+    monkeypatch.setattr(ex, "settle_call", record)
+    runner = Runner(
+        app_name="t",
+        agent=LlmAgent(name="a", model=ScriptedLlm(), instruction="x"),
+        session_service=InMemorySessionService(),
+    )
+    executor = ex.TopSkillA2aExecutor(runner=runner)
+    state = ex.CallState(call_id="call-1", task_id="task-1", answer_parts=list(parts), model="m-1")
+    executor._call_for_task["task-1"] = "call-1"
+    executor._state_for_task["task-1"] = state
+    ctx = RequestContext(ServerCallContext(user=PayerUser("p")), task_id="task-1", context_id="ctx-1")
+    queue = _Queue()
+    await executor.cancel(ctx, queue)  # type: ignore[arg-type]
+    assert len(queue.events) == 1 and state.settled
+    assert [(s["succeeded"], s["error_code"]) for s in settled] == [(succeeded, error_code)]
+    await executor.cancel(ctx, queue)  # type: ignore[arg-type]
+    assert len(settled) == 1  # already settled: no second settlement

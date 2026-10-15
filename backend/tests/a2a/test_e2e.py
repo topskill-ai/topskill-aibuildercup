@@ -12,13 +12,15 @@ import httpx
 import pytest
 from a2a.client import A2AClientError, ClientCallContext, ClientConfig, create_client
 from a2a.types import Message, Part, Role, SendMessageRequest
+from google.adk.agents import LlmAgent
+from google.adk.models import BaseLlm
 from google.cloud.firestore import FieldFilter
 from google.protobuf.json_format import MessageToDict
 
 from tests.a2a.conftest import A2AEnv, issue_mandate
 from tests.a2a.fakes import text_response
 from tests.core.helpers import settings_env
-from topskill.a2a import call_id_for, executor
+from topskill.a2a import _deps, call_id_for, executor
 from topskill.a2a.assistant import a2a_error_code, extract_result
 from topskill.db import Col, get_db
 from topskill.testing.factories import make_agent, make_user, open_wallet, unique
@@ -278,3 +280,56 @@ async def test_budget_exhausted_over_http(app, client, a2a_env: A2AEnv) -> None:
     assert a2a_error_code(exc.value) == ("mandate_budget_exhausted", 402)
     m = await _doc(Col.MANDATES, mandate["id"])
     assert (m["spent_cents"], m["reserved_cents"], m["calls"]) == (300, 0, 1)
+
+
+class _AnswerThenStall(BaseLlm):
+    """Streams the full answer as one event, then keeps the run open (``after_agent`` not reached yet)."""
+
+    model: str = "scripted-model"
+
+    async def generate_content_async(self, llm_request, stream: bool = False):
+        yield text_response("FULL EXPERT ANSWER: do A, then B, then C.")
+        await asyncio.sleep(1.0)
+
+
+async def test_paid_task_cannot_be_canceled_for_a_free_answer(
+    app, client, a2a_env: A2AEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A caller that has the answer text cannot cancel its own task to avoid the charge (SPEC §9.3)."""
+    _owner, agent, payer, mandate, token = await _setup(client)
+
+    async def build(agent_doc, version):
+        return LlmAgent(name="stalling", model=_AnswerThenStall(), instruction="x")
+
+    monkeypatch.setattr(_deps, "build_runtime_agent", build)
+    executor.clear_stacks()
+    message_id = uuid.uuid4().hex
+    cancel_replies: list[httpx.Response] = []
+    seen: list[dict] = []
+    async with a2a_client(app, agent.slug, streaming=True) as a2a:
+        req = SendMessageRequest(
+            message=Message(message_id=message_id, role=Role.ROLE_USER, parts=[Part(text="Plan a visa")])
+        )
+        ctx = ClientCallContext(service_parameters={"X-AP2-Mandate": token})
+        async for item in a2a.send_message(req, context=ctx):
+            d = MessageToDict(item[0] if isinstance(item, tuple) else item)
+            seen.append(d)
+            task_id = (d.get("task") or {}).get("id") or (d.get("statusUpdate") or {}).get("taskId")
+            if "FULL EXPERT ANSWER" in json.dumps(d) and not cancel_replies:
+                for method in ("CancelTask", "tasks/cancel"):
+                    cancel_replies.append(
+                        await client.post(
+                            f"/a2a/{agent.slug}",
+                            json={"jsonrpc": "2.0", "id": 9, "method": method, "params": {"id": task_id}},
+                            headers={"X-AP2-Mandate": token},
+                        )
+                    )
+    assert len(cancel_replies) == 2, seen
+    for resp in cancel_replies:
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["error"]["code"] == -32002
+    assert extract_result(seen)[0] == "TASK_STATE_COMPLETED"
+    await asyncio.sleep(0.05)
+    call = await _doc(Col.A2A_CALLS, call_id_for(mandate["id"], message_id))
+    assert call["status"] == "completed" and call["charged_cents"] == 200
+    assert (await _doc(Col.WALLETS, payer))["balance_cents"] == 9_800

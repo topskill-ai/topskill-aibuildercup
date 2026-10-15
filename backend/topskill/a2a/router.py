@@ -49,6 +49,10 @@ READ = frozenset(
     }
 )
 V1_PAID = frozenset({"SendMessage", "SendStreamingMessage"})
+# A paid task cannot be canceled: once its answer text has streamed (or is readable through GetTask), a
+# cancel would settle the call as failed and hand the payer a free answer (SPEC §9.3).
+CANCEL = frozenset({"CancelTask", "tasks/cancel"})
+TASK_NOT_CANCELABLE = -32002  # A2A TaskNotCancelableError
 REQUEST_PREVIEW_CHARS = 120
 
 
@@ -163,6 +167,10 @@ async def a2a_rpc(slug: str, request: Request) -> Response:
         return api_error_rpc(rpc_id, err)
     if method not in PAID | READ:
         return rpc_error(rpc_id, -32601, 404, Codes.NOT_FOUND, "Method not found.")
+    if method in CANCEL:
+        return rpc_error(
+            rpc_id, TASK_NOT_CANCELABLE, 409, Codes.VALIDATION_ERROR, "Paid A2A tasks cannot be canceled."
+        )
 
     metadata = params.get("metadata")
     header_token = request.headers.get("x-ap2-mandate")

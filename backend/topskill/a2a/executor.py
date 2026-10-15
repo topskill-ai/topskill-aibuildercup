@@ -3,7 +3,8 @@
 Every reserved call (T8) ends ``completed`` or ``failed``: the executor settles on the normal path in
 ``after_agent`` (charged only on ``TASK_STATE_COMPLETED`` with a visible answer), its ``execute`` settles
 any other exit (model/tool exception → ADK enqueues FAILED itself, timeout, cancellation) as failed, and
-``cancel`` settles a cancelled task. ``billing.settle_a2a_call`` is idempotent, so double calls are no-ops.
+``cancel`` settles a cancelled task (charged once answer text was emitted; the route rejects
+``CancelTask`` for paid calls anyway). ``billing.settle_a2a_call`` is idempotent, so double calls are no-ops.
 
 Probe result (ADK 2.12, a2a-sdk 1.2.2, verified by ``tests/a2a``): the legacy ``A2aAgentExecutor.execute``
 runs ``before_agent`` / ``after_event`` / ``after_agent`` inside the same task as ``execute`` itself, so a
@@ -159,10 +160,20 @@ async def settle_call(
     )
 
 
-async def _settle_safely(call_id: str, *, error_code: str) -> None:
-    """Settle as failed (not charged); runs as a tracked task so a cancellation cannot interrupt it."""
+async def _settle_safely(
+    call_id: str,
+    *,
+    error_code: str | None,
+    succeeded: bool = False,
+    model: str | None = None,
+    answer_preview: str = "",
+) -> None:
+    """Settle (failed and not charged by default); runs as a tracked task so a cancellation cannot
+    interrupt it."""
     task = tasks.spawn(
-        settle_call(call_id, succeeded=False, model=None, answer_preview="", error_code=error_code),
+        settle_call(
+            call_id, succeeded=succeeded, model=model, answer_preview=answer_preview, error_code=error_code
+        ),
         name=f"a2a-settle:{call_id}",
     )
     try:
@@ -242,6 +253,7 @@ class TopSkillA2aExecutor(A2aAgentExecutor):
         # The legacy implementation is the one the interceptor contract above was verified against.
         super().__init__(runner=runner, config=config, use_legacy=True)
         self._call_for_task: dict[str, str] = {}
+        self._state_for_task: dict[str, CallState] = {}
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         call_ctx = context.call_context
@@ -274,14 +286,29 @@ class TopSkillA2aExecutor(A2aAgentExecutor):
                     _active_calls.discard(call_id)
                 if context.task_id:
                     self._call_for_task.pop(context.task_id, None)
+                    self._state_for_task.pop(context.task_id, None)
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
+        """The route rejects ``CancelTask`` for paid calls; this is the defence behind it. A cancel that
+        arrives after answer text was emitted cannot make the answer free (the caller already has it,
+        §7.4): such a call is settled as succeeded, anything earlier as failed (not charged)."""
         try:
             await super().cancel(context, event_queue)
         finally:
-            call_id = self._call_for_task.get(context.task_id or "")
-            if call_id:
-                await _settle_safely(call_id, error_code="canceled")
+            task_id = context.task_id or ""
+            call_id = self._call_for_task.get(task_id)
+            st = self._state_for_task.get(task_id)
+            if call_id and not (st is not None and st.settled):
+                answer = "\n".join(p for p in st.answer_parts if p.strip()) if st is not None else ""
+                if answer.strip():
+                    model = st.model if st is not None else None
+                    await _settle_safely(
+                        call_id, error_code=None, succeeded=True, model=model, answer_preview=answer
+                    )
+                else:
+                    await _settle_safely(call_id, error_code="canceled")
+                if st is not None:
+                    st.settled = True
 
     async def _enqueue_failed(self, context: RequestContext, event_queue: EventQueue, text: str) -> None:
         if not context.task_id or not context.context_id:
@@ -309,6 +336,7 @@ class TopSkillA2aExecutor(A2aAgentExecutor):
         if st is not None and st.call_id and context.task_id:
             st.task_id = context.task_id
             self._call_for_task[context.task_id] = st.call_id
+            self._state_for_task[context.task_id] = st
             try:
                 await (
                     get_db()
