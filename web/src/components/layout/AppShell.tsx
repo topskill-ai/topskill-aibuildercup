@@ -36,7 +36,15 @@ export function AppShell() {
         </main>
         <Footer />
       </div>
-      <Toaster position="top-center" richColors closeButton toastOptions={{ className: "font-sans" }} />
+      {/* Below the 53 px top bar so a toast never covers the navigation. */}
+      <Toaster
+        position="top-center"
+        offset={{ top: 64 }}
+        mobileOffset={{ top: 60 }}
+        richColors
+        closeButton
+        toastOptions={{ className: "font-sans" }}
+      />
       <ScrollRestoration />
     </LoginDialogProvider>
   );
