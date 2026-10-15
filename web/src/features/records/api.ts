@@ -54,6 +54,7 @@ export function useRecordDetail(agentId: string, recordId: string, revealPii: bo
         query: { reveal_pii: revealPii ? 1 : undefined },
       }),
     enabled: Boolean(agentId && recordId),
+    placeholderData: keepPreviousData,
   });
 }
 
