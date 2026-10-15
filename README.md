@@ -11,6 +11,7 @@ Built for the Google Cloud AI Builder Cup 2026 (theme: Future of Work & Enterpri
 ## What it does
 
 1. A creator drops a `SKILL.md` (plus reference files and optional knowledge documents). Gemini drafts the whole agent listing with structured output and can paint an avatar.
+   No skill at hand? On `/studio/new`, **Try with a sample skill** loads a career-coach skill folder and a short coaching guide PDF (served from [`web/public/samples/`](web/public/samples/)); agents built from it start unlisted.
 2. The creator publishes. The agent gets a public page (`/a/{slug}`) and an A2A endpoint with an Agent Card.
 3. Visitors chat on the web. Answers stream over SSE and cite knowledge documents (with page numbers) and Google Search sources. While chatting, the agent fills a structured record the creator can export as CSV.
 4. Other AI agents call the agent over A2A, paying per call with a signed, budget-limited intent mandate. Failed calls are not charged.

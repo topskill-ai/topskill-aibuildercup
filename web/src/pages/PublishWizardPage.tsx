@@ -36,6 +36,7 @@ import {
 import { GoLiveStep } from "@/features/publish/GoLiveStep";
 import { DraftingSkeleton, IdentityStep } from "@/features/publish/IdentityStep";
 import { PricingFields } from "@/features/publish/PricingFields";
+import { loadSampleSkill } from "@/features/publish/sample";
 import { SkillDropzone } from "@/features/publish/SkillDropzone";
 import {
   STEP_LABELS,
@@ -147,6 +148,9 @@ export default function PublishWizardPage() {
   const [finishedMs, setFinishedMs] = useState<number | null>(null);
   const [phase, setPhase] = useState<Phase>("editing");
   const [uploads, setUploads] = useState<UploadItem[]>([]);
+  /** The skill came from "Try with a sample skill"; such agents start unlisted. */
+  const [fromSample, setFromSample] = useState(false);
+  const [sampleLoading, setSampleLoading] = useState(false);
   const knowledgeInput = useRef<HTMLInputElement | null>(null);
   const draftSeq = useRef(0);
   const [draftRev, setDraftRev] = useState(0);
@@ -245,6 +249,31 @@ export default function PublishWizardPage() {
       else startSkillUpload(c.skill);
     }
     setProblems(found);
+  };
+
+  /** A real drop after the sample puts the marketplace listing back to its default. */
+  const onPickOwn = (picked: PickedFile[]) => {
+    if (fromSample) {
+      setFromSample(false);
+      setForm((f) => ({ ...f, golive: { ...f.golive, listed: true } }));
+    }
+    onPick(picked);
+  };
+
+  const onSample = async () => {
+    setSampleLoading(true);
+    try {
+      const picked = await loadSampleSkill();
+      if (!mounted.current) return;
+      setFromSample(true);
+      // Sample-based agents stay out of the marketplace by default; the link and A2A still work.
+      setForm((f) => ({ ...f, golive: { ...f.golive, listed: false } }));
+      onPick(picked);
+    } catch (err) {
+      setProblems([err instanceof Error ? err.message : "The sample skill could not be loaded. Try again."]);
+    } finally {
+      setSampleLoading(false);
+    }
   };
 
   const addKnowledge = (files: File[]) => {
@@ -383,7 +412,14 @@ export default function PublishWizardPage() {
             </div>
           ) : step === "upload" ? (
             <div className="space-y-5">
-              <SkillDropzone onPick={onPick} busy={skillUpload.isPending} disabled={skillUpload.isPending} compact={Boolean(skill)} />
+              <SkillDropzone
+                onPick={onPickOwn}
+                onSample={() => void onSample()}
+                sampleLoading={sampleLoading}
+                busy={skillUpload.isPending}
+                disabled={skillUpload.isPending || sampleLoading}
+                compact={Boolean(skill)}
+              />
               {skill ? (
                 <div className="flex items-center gap-3 rounded-card border border-border p-4">
                   <BookOpen aria-hidden className="h-5 w-5 shrink-0 text-primary" />
@@ -495,6 +531,7 @@ export default function PublishWizardPage() {
               errors={shownErrors}
               skill={skill}
               knowledgeFiles={knowledge}
+              fromSample={fromSample}
               publicBase={window.location.host}
             />
           )}

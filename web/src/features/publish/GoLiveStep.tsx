@@ -50,6 +50,7 @@ export function GoLiveStep({
   errors,
   skill,
   knowledgeFiles,
+  fromSample,
   publicBase,
 }: {
   form: WizardForm;
@@ -58,6 +59,8 @@ export function GoLiveStep({
   errors: FieldErrors;
   skill: Skill | null;
   knowledgeFiles: File[];
+  /** Built from the bundled sample skill: explain why the listing starts off. */
+  fromSample?: boolean;
   publicBase: string;
 }) {
   const meta = useMeta();
@@ -120,7 +123,11 @@ export function GoLiveStep({
             checked={g.listed}
             onCheckedChange={(listed) => setG({ listed })}
             label="List in the marketplace"
-            description="Unlisted agents are still reachable by their link and over A2A."
+            description={
+              fromSample
+                ? "Agents built from the sample skill start unlisted so the marketplace stays tidy. They are still reachable by their link and over A2A."
+                : "Unlisted agents are still reachable by their link and over A2A."
+            }
           />
         </div>
       </div>

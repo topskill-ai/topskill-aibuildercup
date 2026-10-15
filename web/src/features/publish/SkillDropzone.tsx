@@ -2,19 +2,25 @@
  * Step 1 drop target: a skill folder, a .zip of it, or a loose SKILL.md — plus optional knowledge
  * documents dropped in the same gesture (SPEC §11.4).
  */
-import { FileText, FolderUp, Upload } from "lucide-react";
+import { FileText, FolderUp, Sparkles, Upload } from "lucide-react";
 import { useRef, useState, type DragEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
 import { filesFromDataTransfer, filesFromInput, type PickedFile } from "./files";
+import { SAMPLE_SKILL_MD_URL } from "./sample";
 
 export function SkillDropzone({
   onPick,
   disabled,
   busy,
   compact,
+  onSample,
+  sampleLoading,
 }: {
   onPick: (files: PickedFile[]) => void;
+  /** Load the bundled sample skill (career coach + guide PDF) instead of the creator's own files. */
+  onSample?: () => void;
+  sampleLoading?: boolean;
   disabled?: boolean;
   busy?: boolean;
   /** Smaller variant once a skill is loaded ("Replace skill"). */
@@ -82,6 +88,27 @@ export function SkillDropzone({
           Choose files
         </Button>
       </div>
+      {onSample && !compact ? (
+        <div className="mt-5 flex max-w-md flex-col items-center gap-1 border-t border-border pt-4">
+          <p className="text-[13px] text-muted">No skill at hand?</p>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Sparkles className="h-4 w-4" />}
+            disabled={disabled}
+            loading={sampleLoading}
+            onClick={onSample}
+          >
+            Try with a sample skill
+          </Button>
+          <p className="text-xs text-subtle">
+            A career coach skill with a short coaching guide PDF.{" "}
+            <a href={SAMPLE_SKILL_MD_URL} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2">
+              View its SKILL.md
+            </a>
+          </p>
+        </div>
+      ) : null}
       <input
         ref={folderInput}
         type="file"
