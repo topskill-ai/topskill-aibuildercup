@@ -6,6 +6,7 @@ import asyncio
 import importlib
 import logging
 import os
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -125,8 +126,13 @@ def create_app() -> FastAPI:
     app.get("/healthz", tags=["health"])(healthz)
 
     mounted: list[str] = []
+    unavailable: set[str] = set()
     for module_name, attr, prefix in ROUTERS:
+        if module_name in unavailable:
+            continue
         router = _load_router(module_name, attr)
+        if router is None and module_name not in sys.modules:
+            unavailable.add(module_name)
         if router is not None:
             app.include_router(router, prefix=prefix)
             mounted.append(f"{module_name}:{attr}")

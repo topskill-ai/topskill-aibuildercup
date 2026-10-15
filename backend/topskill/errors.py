@@ -234,20 +234,31 @@ class BodySizeLimitMiddleware:
             await self._reject(scope, receive, send)
             return
         received = 0
+        rejected = False
+        response_started = False
+
+        async def guarded_send(message: Message) -> None:
+            nonlocal response_started
+            if rejected:
+                return  # a 413 was already sent; drop whatever the app tries to send
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
 
         async def limited_receive() -> Message:
-            nonlocal received
+            nonlocal received, rejected
+            if rejected:
+                return {"type": "http.disconnect"}
             message = await receive()
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
-                if received > self.max_bytes:
-                    raise _BodyTooLarge
+                if received > self.max_bytes and not response_started:
+                    rejected = True
+                    await self._reject(scope, receive, send)
+                    return {"type": "http.disconnect"}
             return message
 
-        try:
-            await self.app(scope, limited_receive, send)
-        except _BodyTooLarge:
-            await self._reject(scope, receive, send)
+        await self.app(scope, limited_receive, guarded_send)
 
     async def _reject(self, scope: Scope, receive: Receive, send: Send) -> None:
         limit_mb = self.max_bytes // (1024 * 1024)
@@ -258,10 +269,6 @@ class BodySizeLimitMiddleware:
             detail={"max_bytes": self.max_bytes},
         )
         await response(scope, receive, send)
-
-
-class _BodyTooLarge(Exception):
-    pass
 
 
 # --------------------------------------------------------------------------- handlers
