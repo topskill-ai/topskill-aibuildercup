@@ -67,6 +67,20 @@ STACK_CACHE_MAX = 64
 MANDATE_HEADER = "x-ap2-mandate"
 MANDATE_METADATA_KEY = "ap2_mandate"
 ANSWER_PREVIEW_CHARS = 300
+CLIENT_MARGIN_MAX_S = 10.0
+DEADLINE_STATE_KEY = "a2a_deadline"
+
+
+def run_budget_s() -> float:
+    """How long one paid A2A call may run on the server, counted from the route's entry.
+
+    It always ends before the Enterprise Assistant's client gives up (``A2A_CALL_TIMEOUT_S``): a run that
+    outlived the caller would still be charged after the caller reported it as failed and free. The margin
+    (at most 10 s, a quarter of the client timeout for small values) leaves time to settle and answer."""
+    s = get_settings()
+    call_timeout = float(s.a2a_call_timeout_s)
+    margin = min(CLIENT_MARGIN_MAX_S, call_timeout / 4)
+    return max(0.5, min(float(s.turn_total_timeout_s), call_timeout - margin))
 
 
 # --------------------------------------------------------------------------- call context
@@ -104,6 +118,9 @@ class MandateContextBuilder(DefaultServerCallContextBuilder):
         call_id = getattr(request.state, "a2a_call_id", None)
         if call_id:
             ctx.state["a2a_call_id"] = call_id
+        deadline = getattr(request.state, DEADLINE_STATE_KEY, None)
+        if isinstance(deadline, float):
+            ctx.state[DEADLINE_STATE_KEY] = deadline
         return ctx
 
 
@@ -228,16 +245,23 @@ class TopSkillA2aExecutor(A2aAgentExecutor):
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         call_ctx = context.call_context
-        call_id = call_ctx.state.get("a2a_call_id") if call_ctx is not None else None
+        call_state = call_ctx.state if call_ctx is not None else {}
+        call_id = call_state.get("a2a_call_id")
+        deadline = call_state.get(DEADLINE_STATE_KEY)
+        if not isinstance(deadline, float):
+            deadline = asyncio.get_running_loop().time() + run_budget_s()
         state = CallState(call_id=call_id, task_id=context.task_id)
         token = _CALL.set(state)
         if call_id:
             _active_calls.add(call_id)
         try:
-            async with asyncio.timeout(get_settings().turn_total_timeout_s):
+            async with asyncio.timeout_at(deadline):
                 await super().execute(context, event_queue)
         except TimeoutError:
             log.warning("a2a_turn_timeout call_id=%s task_id=%s", call_id, context.task_id)
+            if call_id and not state.settled:  # settle first: the caller reads the call doc on FAILED
+                await _settle_safely(call_id, error_code=Codes.AGENT_RUN_FAILED)
+                state.settled = True
             await self._enqueue_failed(context, event_queue, "The agent took too long to answer.")
         finally:
             _CALL.reset(token)

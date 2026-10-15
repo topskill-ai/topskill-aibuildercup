@@ -3,6 +3,7 @@ Enterprise Assistant demo stream."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -20,7 +21,15 @@ from topskill.errors import ApiError, Codes, current_trace_id
 from . import _deps, assistant, directory
 from .cards import build_card, card_to_dict
 from .directory import DirectoryAgent
-from .executor import A2AStack, get_stack, is_call_active, load_a2a_agent, settle_call
+from .executor import (
+    DEADLINE_STATE_KEY,
+    A2AStack,
+    get_stack,
+    is_call_active,
+    load_a2a_agent,
+    run_budget_s,
+    settle_call,
+)
 from .mandates import reserve_call, verify_token
 
 log = logging.getLogger(__name__)
@@ -67,7 +76,10 @@ def api_error_rpc(rpc_id: Any, err: ApiError) -> JSONResponse:
 
 def request_preview(message: dict) -> str:
     """Text of the A2A message parts (v1.0 ``{text}`` and v0.3 ``{kind: "text", text}``), ≤ 120 chars."""
-    texts = [p.get("text") for p in message.get("parts") or [] if isinstance(p, dict)]
+    parts = message.get("parts")
+    if not isinstance(parts, list):
+        parts = []
+    texts = [p.get("text") for p in parts if isinstance(p, dict)]
     joined = " ".join(" ".join(t.split()) for t in texts if isinstance(t, str) and t.strip())
     return joined[:REQUEST_PREVIEW_CHARS]
 
@@ -132,6 +144,8 @@ async def get_agent_card(slug: str) -> JSONResponse:
 
 @router.post("/a2a/{slug}")
 async def a2a_rpc(slug: str, request: Request) -> Response:
+    # The run budget counts from here, so preflight time cannot push the run past the caller's timeout.
+    deadline = asyncio.get_running_loop().time() + run_budget_s()
     try:
         body = await request.json()  # Starlette caches the parsed body; the dispatcher reads the same dict
     except (json.JSONDecodeError, UnicodeDecodeError):
@@ -139,6 +153,8 @@ async def a2a_rpc(slug: str, request: Request) -> Response:
     if not isinstance(body, dict):  # JSON-RPC batch arrays are not supported
         return rpc_error(None, -32600, 400, Codes.VALIDATION_ERROR, "Invalid request.")
     rpc_id, method, params = body.get("id"), body.get("method"), body.get("params")
+    if not isinstance(method, str) or not method:
+        return rpc_error(rpc_id, -32600, 400, Codes.VALIDATION_ERROR, "Invalid request.")
     if not isinstance(params, dict):
         return rpc_error(rpc_id, -32602, 400, Codes.VALIDATION_ERROR, "Invalid params.")
     try:
@@ -171,6 +187,8 @@ async def a2a_rpc(slug: str, request: Request) -> Response:
     message_id = message.get("messageId") if isinstance(message, dict) else None
     if not isinstance(message_id, str) or not message_id or len(message_id) > 200:
         return rpc_error(rpc_id, -32602, 400, Codes.VALIDATION_ERROR, "Invalid params: message.messageId.")
+    if not isinstance(message.get("parts"), list) or not message["parts"]:
+        return rpc_error(rpc_id, -32602, 400, Codes.VALIDATION_ERROR, "Invalid params: message.parts.")
     _force_blocking(method, params)
     try:
         stack = await _stack(slug, agent)  # before reserving: a build failure must not hold budget
@@ -184,6 +202,7 @@ async def a2a_rpc(slug: str, request: Request) -> Response:
             rpc_id, -32001, 503, Codes.SERVICE_UNAVAILABLE, "This agent is temporarily unavailable."
         )
     request.state.a2a_call_id = call_id
+    setattr(request.state, DEADLINE_STATE_KEY, deadline)
     log.info("a2a_call_reserved slug=%s call_id=%s price_cents=%s method=%s", slug, call_id, price, method)
     try:
         resp = await stack.dispatcher.handle_requests(request)

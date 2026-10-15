@@ -192,6 +192,41 @@ async def test_timeout_fails_and_is_not_charged(
     await _no_running(mandate["id"])
 
 
+async def test_server_gives_up_before_the_callers_timeout(
+    app, client, a2a_env: A2AEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run never outlives A2A_CALL_TIMEOUT_S: the server fails and settles it first, so a caller that
+    reports a timed-out call as free is right (the run is not charged later)."""
+
+    async def slow(_request):
+        await asyncio.sleep(6)
+        return text_response("too late")
+
+    _, agent, payer, mandate, token = await _setup(client, script=[slow], env=a2a_env)
+    loop = asyncio.get_running_loop()
+    with settings_env(monkeypatch, a2a_call_timeout_s="2"):
+        assert executor.run_budget_s() == 1.5
+        started = loop.time()
+        out = await send(app, agent.slug, "Plan a visa", token)
+        elapsed = loop.time() - started
+    assert extract_result(out)[0] == "TASK_STATE_FAILED"
+    assert elapsed < 2, elapsed
+    await asyncio.sleep(0.5)
+    m = await _doc(Col.MANDATES, mandate["id"])
+    assert (m["spent_cents"], m["reserved_cents"], m["calls"]) == (0, 0, 0)
+    assert (await _doc(Col.WALLETS, payer))["balance_cents"] == 10_000
+    await _no_running(mandate["id"])
+
+
+def test_run_budget_stays_inside_the_client_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    with settings_env(monkeypatch, a2a_call_timeout_s="120", turn_total_timeout_s="300"):
+        assert executor.run_budget_s() == 110
+    with settings_env(monkeypatch, a2a_call_timeout_s="120", turn_total_timeout_s="60"):
+        assert executor.run_budget_s() == 60
+    with settings_env(monkeypatch, a2a_call_timeout_s="1"):
+        assert executor.run_budget_s() == 0.75
+
+
 async def test_v03_message_send_and_read_methods(app, client, a2a_env: A2AEnv) -> None:
     _, agent, _payer, mandate, token = await _setup(client)
     body = {
