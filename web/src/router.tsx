@@ -21,6 +21,8 @@ export const routes: RouteObject[] = [
     path: "/",
     element: <AppShell />,
     errorElement: <RouteError />,
+    // Shown while the first lazy page loads; without it React Router warns on every page load.
+    hydrateFallbackElement: <div className="min-h-dvh bg-bg" aria-busy="true" />,
     children: [
       {
         errorElement: <RouteError />,
