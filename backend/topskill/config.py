@@ -138,11 +138,14 @@ class Settings(BaseSettings):
     voice_location: str = "global"
     voice_model_fallback: str = "gemini-live-2.5-flash-native-audio"
     voice_location_fallback: str = "us-central1"
-    voice_max_session_s: int = Field(600, ge=1)
+    # Vertex ends a Live audio session after ~10 min; the limit plus the 20 s answer grace stays inside it.
+    voice_max_session_s: int = Field(540, ge=1, le=570)
     voice_idle_timeout_s: int = Field(90, ge=1)
     voice_auth_timeout_s: int = Field(10, ge=1)
     voice_max_sessions: int = Field(20, ge=1)
     voice_sessions_per_hour: int = Field(30, ge=0)
+    voice_connect_timeout_s: float = Field(12.0, gt=0)  # per Live plan: WS handshake + setupComplete
+    voice_max_tool_calls_per_round: int = Field(8, ge=1)
 
     _split_lists = field_validator("chat_model_allowlist", "cors_origins", mode="before")(_split_csv)
 

@@ -86,6 +86,14 @@ class ToolEvent(BaseModel):
     tool: ToolLineDoc
 
 
+class SpeakingEvent(BaseModel):
+    """Sent before the first audio frame of a round: the following audio belongs to ``turn_id``. Lets the
+    browser stop playback itself when the visitor's next utterance (another ``turn_id``) is heard."""
+
+    type: Literal["speaking"] = "speaking"
+    turn_id: str
+
+
 class InterruptedEvent(BaseModel):
     """Barge-in: the visitor spoke over the answer. Stop playback immediately."""
 

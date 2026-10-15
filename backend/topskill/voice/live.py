@@ -1,8 +1,8 @@
 """Gemini Live on Vertex AI (SPEC §18.1).
 
 * :class:`LiveConnector` is the seam between the voice session and Google: the real
-  :class:`GenaiConnector` wraps ``client.aio.live.connect`` (one Vertex client per location, ADC); tests
-  install a scripted fake with :func:`set_connector`.
+  :class:`GenaiConnector` wraps ``client.aio.live.connect`` (one Vertex client per location, ADC loaded
+  once and refreshed off the event loop); tests install a scripted fake with :func:`set_connector`.
 * :func:`live_plans` = ``[(VOICE_MODEL, VOICE_LOCATION), (VOICE_MODEL_FALLBACK, VOICE_LOCATION_FALLBACK)]``;
   the session connects with the first plan that answers the setup handshake.
 * :func:`build_live_config` mirrors the text chat: same instruction, function tools (knowledge search,
@@ -31,8 +31,11 @@ import logging
 import threading
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
+import google.auth
+import google.auth.transport.requests
 from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
@@ -43,6 +46,8 @@ from topskill.voice.protocol import INPUT_MIME
 log = logging.getLogger(__name__)
 
 TOOL_TIMEOUT_S = 30.0
+CLOUD_SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
+TOKEN_REFRESH_MARGIN = timedelta(minutes=5)
 
 
 class LiveSession(Protocol):
@@ -84,18 +89,39 @@ class GenaiSession:
 
 
 class GenaiConnector:
-    """Vertex AI Live (ADC). One ``genai.Client`` per location, created lazily."""
+    """Vertex AI Live (ADC). One ``genai.Client`` per location, created lazily.
+
+    The credentials are loaded once and handed to every client. Without them genai's ``live.connect``
+    runs ``google.auth.default()`` and a synchronous token refresh on the event loop for every call
+    (blocking every other request); here the refresh runs in a worker thread before each connect, so
+    ``live.connect`` always finds a valid token.
+    """
 
     def __init__(self) -> None:
         self._clients: dict[str, genai.Client] = {}
         self._lock = threading.Lock()
+        self._credentials: Any = None
+        self._refresh_lock = asyncio.Lock()
 
-    def _client(self, location: str) -> genai.Client:
+    async def _fresh_credentials(self) -> Any:
+        async with self._refresh_lock:
+            if self._credentials is None:
+                creds, _ = await asyncio.to_thread(google.auth.default, scopes=CLOUD_SCOPES)
+                self._credentials = creds
+            creds = self._credentials
+            if _needs_refresh(creds):
+                await asyncio.to_thread(creds.refresh, google.auth.transport.requests.Request())
+            return creds
+
+    def _client(self, location: str, credentials: Any) -> genai.Client:
         with self._lock:
             client = self._clients.get(location)
             if client is None:
                 client = genai.Client(
-                    vertexai=True, project=get_settings().google_cloud_project, location=location
+                    vertexai=True,
+                    project=get_settings().google_cloud_project,
+                    location=location,
+                    credentials=credentials,
                 )
                 self._clients[location] = client
             return client
@@ -104,8 +130,20 @@ class GenaiConnector:
     async def connect(
         self, *, model: str, location: str, config: types.LiveConnectConfig
     ) -> AsyncIterator[LiveSession]:
-        async with self._client(location).aio.live.connect(model=model, config=config) as session:
+        client = self._client(location, await self._fresh_credentials())
+        async with client.aio.live.connect(model=model, config=config) as session:
             yield GenaiSession(session)
+
+
+def _needs_refresh(creds: Any) -> bool:
+    """No token yet, invalid, or expiring within :data:`TOKEN_REFRESH_MARGIN` (``expiry`` is naive UTC)."""
+    if not getattr(creds, "token", None) or not creds.valid:
+        return True
+    expiry = getattr(creds, "expiry", None)
+    if expiry is None:
+        return False
+    now = datetime.now(UTC).replace(tzinfo=None)
+    return expiry - now <= TOKEN_REFRESH_MARGIN
 
 
 _connector: LiveConnector | None = None

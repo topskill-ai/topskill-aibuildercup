@@ -37,13 +37,17 @@ def get(uid: str) -> Replaceable | None:
 
 
 async def claim(uid: str, session: Replaceable) -> None:
-    """Register ``session`` as the account's only live session (ending a previous one first)."""
-    previous = _by_uid.get(uid)
-    if previous is not None and previous is not session:
+    """Register ``session`` as the account's only live session (ending previous ones first).
+
+    Re-reads the slot after every wait: two calls of one account racing against an existing session
+    both replace it, and the one that registers second replaces the first in turn."""
+    deadline = asyncio.get_running_loop().time() + REPLACE_WAIT_S
+    while (previous := _by_uid.get(uid)) is not None and previous is not session:
         log.info("voice_session_replaced uid=%s", uid)
         previous.replace()
+        left = max(0.0, deadline - asyncio.get_running_loop().time())
         try:
-            await asyncio.wait_for(previous.finished.wait(), timeout=REPLACE_WAIT_S)
+            await asyncio.wait_for(previous.finished.wait(), timeout=left)
         except TimeoutError:
             log.warning("voice_session_replace_timeout uid=%s", uid)
         if _by_uid.get(uid) is previous:

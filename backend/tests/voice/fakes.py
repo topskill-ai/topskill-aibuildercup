@@ -154,8 +154,10 @@ class FakeLiveSession:
 
 
 class FakeConnector:
-    def __init__(self, fail_models: tuple[str, ...] = ()) -> None:
+    def __init__(self, fail_models: tuple[str, ...] = (), hang_models: tuple[str, ...] = ()) -> None:
         self.fail_models = fail_models
+        self.hang_models = hang_models  # accept the socket but never answer the setup
+        self.hung_cancelled = 0
         self.attempts: list[tuple[str, str]] = []
         self.sessions: list[FakeLiveSession] = []
         self._new_session = asyncio.Event()
@@ -165,6 +167,12 @@ class FakeConnector:
         self.attempts.append((model, location))
         if model in self.fail_models:
             raise RuntimeError(f"1008 Publisher model {model} was not found")
+        if model in self.hang_models:
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                self.hung_cancelled += 1
+                raise
         session = FakeLiveSession(model, config)
         self.sessions.append(session)
         self._new_session.set()
@@ -206,6 +214,10 @@ def turn_complete() -> types.LiveServerMessage:
 
 def interrupted() -> types.LiveServerMessage:
     return msg(interrupted=True)
+
+
+def go_away(time_left: str = "5s") -> types.LiveServerMessage:
+    return types.LiveServerMessage(go_away=types.LiveServerGoAway(time_left=time_left))
 
 
 def usage(prompt: int, response: int) -> types.LiveServerMessage:

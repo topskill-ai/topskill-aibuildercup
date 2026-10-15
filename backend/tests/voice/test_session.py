@@ -13,6 +13,7 @@ from tests.voice.fakes import (
     AsgiWebSocket,
     answer,
     audio,
+    go_away,
     heard,
     interrupted,
     said,
@@ -25,6 +26,7 @@ from topskill.db import Col, get_db
 from topskill.domain import MessageDoc
 from topskill.testing.factories import make_agent, make_conversation, make_user, open_wallet
 from topskill.voice import registry
+from topskill.voice.session import VoiceSession
 
 pytestmark = pytest.mark.emulator
 
@@ -178,6 +180,7 @@ async def test_barge_in_mid_answer_is_aborted_and_not_charged(app, voice_env) ->
     ready = await ws.next_event("ready")
     live = await voice_env.connector.session()
     live.push(heard("Tell me a long story"), audio(), said("Once upon a time"))
+    speaking = await ws.next_event("speaking")
     frame = await ws.receive()
     while not isinstance(frame, bytes):
         frame = await ws.receive()
@@ -185,7 +188,7 @@ async def test_barge_in_mid_answer_is_aborted_and_not_charged(app, voice_env) ->
     live.push(interrupted())
     event = await ws.next_event("interrupted")
     rnd = await ws.next_event("round")
-    assert rnd["turn_id"] == event["turn_id"]
+    assert rnd["turn_id"] == event["turn_id"] == speaking["turn_id"]
     assert rnd["outcome"] == "aborted" and rnd["billing"]["charged_cents"] == 0
     # The next utterance gets its own (charged) round.
     live.push(heard("What is two plus two?"), *answer("Four."))
@@ -565,8 +568,133 @@ async def test_config_endpoint(client) -> None:
     assert resp.status_code == 200
     assert resp.json() == {
         "enabled": True,
-        "max_session_s": 600,
+        "max_session_s": 540,
         "idle_timeout_s": 90,
         "input_sample_rate": 16000,
         "output_sample_rate": 24000,
     }
+
+
+# --------------------------------------------------------------------------- review hardening
+
+
+async def test_live_handshake_timeout_is_a_503_and_releases_everything(app, voice_env, monkeypatch) -> None:
+    voice_env.connector.hang_models = ("gemini-live-2.5-flash", "gemini-live-2.5-flash-native-audio")
+    _, visitor, agent = await setup_agent()
+    conv = await make_conversation(agent, visitor)
+    with settings_env(monkeypatch, VOICE_CONNECT_TIMEOUT_S="0.2"):
+        ws = await start_call(app, agent, visitor, conversation_id=conv.id)
+        err = await ws.next_event("error", timeout=5)
+    assert err["code"] == "service_unavailable" and err["trace_id"]
+    await ws.drain()
+    assert ws.close_code == 4503
+    await ws.finish()
+    assert voice_env.connector.hung_cancelled == 2  # both plans tried, both half-open sockets closed
+    assert registry.get(visitor.uid) is None and not locks.is_busy(conv.id)
+
+
+async def test_voice_calls_take_no_text_turn_slot_but_count_per_account(app, voice_env, monkeypatch) -> None:
+    _, visitor, agent = await setup_agent()
+    with settings_env(monkeypatch, MAX_CONCURRENT_TURNS="1"):
+        ws = await start_call(app, agent, visitor)
+        await ws.next_event("ready")
+        assert locks.active_turns() == 0
+        locks.acquire_turn("cnv_text_elsewhere", "someone_else")  # the only text slot is still free
+        locks.release_turn("cnv_text_elsewhere")
+        await ws.disconnect()
+    # The account's turn limit covers voice calls too.
+    held = [f"cnv_busy_{i}" for i in range(locks.MAX_TURNS_PER_USER)]
+    for cid in held:
+        locks.acquire_turn(cid, visitor.uid)
+    try:
+        ws2 = await start_call(app, agent, visitor)
+        assert (await ws2.next_event("error"))["code"] == "rate_limited"
+        await ws2.drain()
+        assert ws2.close_code == 4429
+        await ws2.finish()
+    finally:
+        for cid in held:
+            locks.release_turn(cid)
+    assert registry.get(visitor.uid) is None
+
+
+async def test_an_unanswered_utterance_does_not_hold_the_call_open(app, voice_env, monkeypatch) -> None:
+    _, visitor, agent = await setup_agent()
+    with settings_env(monkeypatch, VOICE_IDLE_TIMEOUT_S="1"):
+        ws = await start_call(app, agent, visitor)
+        await ws.next_event("ready")
+        live = await voice_env.connector.session()
+        live.push(heard("Hmm"))  # a backchannel the model does not answer
+        closed = await ws.next_event("closed", timeout=5)
+    assert closed["reason"] == "idle" and closed["conversation_id"] is None
+    await ws.drain()
+    await ws.finish()
+
+
+async def test_a_stale_utterance_does_not_leak_into_the_next_round(app, voice_env, monkeypatch) -> None:
+    monkeypatch.setattr(VoiceSession, "STALE_UTTERANCE_S", 0.2)
+    _, visitor, agent = await setup_agent()
+    ws = await start_call(app, agent, visitor)
+    ready = await ws.next_event("ready")
+    live = await voice_env.connector.session()
+    live.push(heard("Hmm"))
+    await ws.next_event("transcript")
+    await asyncio.sleep(0.5)
+    live.push(heard("What is the fee?"), *answer("290 USD."))
+    assert (await ws.next_event("round"))["outcome"] == "ok"
+    await ws.disconnect()
+    users = [m for m in (await messages_of(ready["conversation_id"])).values() if m.role == "user"]
+    assert [m.text for m in users] == ["What is the fee?"]
+
+
+async def test_tool_calls_per_round_are_capped(app, voice_env, monkeypatch) -> None:
+    _, visitor, agent = await setup_agent(pricing={"free_rounds": 0, "price_cents": 100})
+    await open_wallet(visitor.uid, 1_000)
+    with settings_env(monkeypatch, VOICE_MAX_TOOL_CALLS_PER_ROUND="1"):
+        ws = await start_call(app, agent, visitor)
+        ready = await ws.next_event("ready")
+        live = await voice_env.connector.session()
+        live.push(
+            heard("Search forever"),
+            tool_call("search_knowledge", {"query": "a"}, "c1"),
+            tool_call("search_knowledge", {"query": "b"}, "c2"),
+            tool_call("search_knowledge", {"query": "c"}, "c3"),
+        )
+        rnd = await ws.next_event("round")
+        assert rnd["outcome"] == "failed" and rnd["billing"]["charged_cents"] == 0
+        assert [[r.id for r in batch] for batch in live.tool_responses] == [["c1"], ["c2"], ["c3"]]
+        assert "results" in live.tool_responses[0][0].response
+        assert live.tool_responses[1][0].response == {
+            "error": "Tool limit reached for this answer. Answer now without tools."
+        }
+        # The call goes on: the next utterance is a fresh round with its own tool budget.
+        live.push(heard("Just answer"), tool_call("search_knowledge", {"query": "d"}, "c4"))
+        await ws.next_event("tool")
+        live.push(*answer("Here you go."))
+        assert (await ws.next_event("round"))["outcome"] == "ok"
+        await ws.disconnect()
+    model = next(
+        m
+        for m in (await messages_of(ready["conversation_id"])).values()
+        if m.role == "model" and m.status == "failed"
+    )
+    assert model.error_code == "agent_run_failed" and [t.tool for t in model.tools] == ["search_knowledge"]
+    assert await balance(visitor.uid) == 900
+
+
+async def test_close_after_go_away_is_a_normal_end(app, voice_env) -> None:
+    _, visitor, agent = await setup_agent(pricing={"free_rounds": 0, "price_cents": 100})
+    await open_wallet(visitor.uid, 1_000)
+    ws = await start_call(app, agent, visitor)
+    await ws.next_event("ready")
+    live = await voice_env.connector.session()
+    live.push(heard("Tell me more"), audio(), said("Well"), go_away(), RuntimeError("1011 session over"))
+    items = await ws.drain()
+    events = [i for i in items if isinstance(i, dict)]
+    assert not any(e["type"] == "error" for e in events)
+    rnd = next(e for e in events if e["type"] == "round")
+    assert rnd["outcome"] == "aborted" and rnd["billing"]["charged_cents"] == 0
+    assert events[-1]["type"] == "closed" and events[-1]["reason"] == "server"
+    assert ws.close_code == 1000
+    await ws.finish()
+    assert await balance(visitor.uid) == 1_000

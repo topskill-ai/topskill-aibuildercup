@@ -6,8 +6,13 @@ Three tasks run while the Live session is open:
 * the model pump forwards Live audio to the browser, streams captions, runs function tools and cuts the
   conversation into :class:`~topskill.voice.rounds.Round`s (a round ends with the ``turn_complete`` of a
   turn that produced an answer, or with a barge-in before that);
-* the watchdog enforces the maximum session length and the idle timeout (both end gracefully: the
-  answer being spoken is finished first, at most :data:`END_GRACE_S`).
+* the watchdog enforces the maximum session length (counted from the Live handshake; ends gracefully: the
+  answer being produced is finished first, at most :data:`END_GRACE_S`) and the idle timeout (nothing
+  heard or said and the model not busy), and drops an utterance nobody answered after
+  :attr:`VoiceSession.STALE_UTTERANCE_S`.
+
+Every Live handshake is bounded by ``VOICE_CONNECT_TIMEOUT_S``; a round runs at most
+``VOICE_MAX_TOOL_CALLS_PER_ROUND`` tools; after a GoAway the server's close is a normal end.
 
 Finished rounds are settled one at a time by a settler task with ``billing.settle_round`` (T2: messages +
 charge in one transaction, exactly the text chat rules). After every counted round the next round is
@@ -50,6 +55,7 @@ from topskill.voice.protocol import (
     InterruptedEvent,
     ReadyEvent,
     RoundEvent,
+    SpeakingEvent,
     ToolEvent,
     TranscriptEvent,
     close_code_for,
@@ -61,6 +67,8 @@ log = logging.getLogger(__name__)
 END_GRACE_S = 20.0
 SETTLE_DRAIN_S = 30.0
 HISTORY_MAX_CHARS = 8_000
+TOOL_LIMIT_MESSAGE = "Tool limit reached for this answer. Answer now without tools."
+TOOL_LIMIT_REFUSALS = 2  # refused calls after which the round ends as failed
 
 VOICE_SECTION = """## Voice call
 You are talking with the visitor in a live voice call; everything you say is spoken aloud.
@@ -161,6 +169,7 @@ def done_billing(charge: RoundCharge) -> DoneBilling:
 
 class VoiceSession:
     TICK_S = 0.5  # watchdog resolution (tests lower it)
+    STALE_UTTERANCE_S = 15.0  # an utterance with no reply at all for this long is dropped
 
     def __init__(self, ws: WebSocket, setup: VoiceSetup, *, deps: Deps | None = None) -> None:
         self.ws = ws
@@ -176,6 +185,7 @@ class VoiceSession:
         self.rounds_ok = 0
         self.rounds_saved = 0
         self.persisted = not setup.conversation_is_new
+        self.go_away = False
         self._stop = asyncio.Event()
         self._send_lock = asyncio.Lock()
         self._settle_queue: asyncio.Queue[Round | None] = asyncio.Queue()
@@ -203,8 +213,14 @@ class VoiceSession:
         self._stop.set()
 
     def _in_progress(self) -> bool:
+        """Something of the current round may still be answered (the grace of a graceful end)."""
         rnd = self.round
         return bool(rnd.user_parts or rnd.tools or rnd.answered)
+
+    def _busy(self) -> bool:
+        """The model is answering or a tool runs (an unanswered utterance alone is not busy)."""
+        rnd = self.round
+        return rnd.answered or any(t.status == "running" for t in rnd.tools.values())
 
     def end_gracefully(self, reason: ClosedReason) -> None:
         """Stop listening; let the answer being produced finish (≤ END_GRACE_S), then end."""
@@ -255,6 +271,9 @@ class VoiceSession:
     # ---- run
     async def run(self) -> None:
         settings = get_settings()
+        if self._stop.is_set():  # replaced while waiting for the registry
+            await self._send_closed()
+            return
         prep_instruction, bridge = await self._prepare_model()
         self._bridge = bridge
         config = live_mod.build_live_config(
@@ -268,6 +287,8 @@ class VoiceSession:
             async with AsyncExitStack() as stack:
                 session = await self._open_live(stack, config)
                 self.round.model = self.model_name
+                # Limits count from the Live handshake (Vertex caps a Live session at ~10 minutes).
+                self.started_at = self.last_activity = self._loop.time()
                 quote = self.setup.quote
                 await self.send_event(
                     ReadyEvent(
@@ -332,12 +353,16 @@ class VoiceSession:
         self, stack: AsyncExitStack, config: types.LiveConnectConfig
     ) -> live_mod.LiveSession:
         connector = live_mod.get_connector()
+        timeout = get_settings().voice_connect_timeout_s
         last: BaseException | None = None
         for model, location in live_mod.live_plans():
             try:
-                session = await stack.enter_async_context(
-                    connector.connect(model=model, location=location, config=config)
-                )
+                # Bounds the WS handshake and the wait for setupComplete (genai waits without a timeout);
+                # a cancelled __aenter__ closes the half-open socket.
+                async with asyncio.timeout(timeout):
+                    session = await stack.enter_async_context(
+                        connector.connect(model=model, location=location, config=config)
+                    )
             except Exception as exc:
                 last = exc
                 log.warning(
@@ -368,6 +393,14 @@ class VoiceSession:
             results = await asyncio.gather(*pumps, stop_wait, return_exceptions=True)
         for task, result in zip(pumps, results, strict=False):
             if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError):
+                if self.go_away:
+                    # Live announced the end (GoAway) and then closed: a normal end, not an error. An
+                    # unfinished answer is saved as aborted by _close_round.
+                    log.info(
+                        "voice_closed_after_go_away %s task=%s error=%r", self._log, task.get_name(), result
+                    )
+                    self.stop("server")
+                    continue
                 log.error(
                     "voice_task_failed %s task=%s error=%r",
                     self._log,
@@ -452,6 +485,7 @@ class VoiceSession:
             await self._on_content(sc)
         if msg.go_away is not None:
             log.info("voice_go_away %s time_left=%s", self._log, msg.go_away.time_left)
+            self.go_away = True
             self.end_gracefully("server")
 
     async def _on_content(self, sc: types.LiveServerContent) -> None:
@@ -481,6 +515,9 @@ class VoiceSession:
                 blob = part.inline_data
                 if blob is not None and blob.data and (blob.mime_type or "audio/").startswith("audio/"):
                     self._activity()
+                    if rnd.audio_bytes == 0:
+                        # Tells the browser which round the following audio belongs to (local barge-in).
+                        await self.send_event(SpeakingEvent(turn_id=rnd.turn_id))
                     rnd.audio_bytes += len(blob.data)
                     await self.send_audio(blob.data)
         if sc.output_transcription is not None and sc.output_transcription.text:
@@ -517,9 +554,17 @@ class VoiceSession:
         assert self._bridge is not None
         if rnd.tool_impls is None:
             rnd.tool_impls = self._bridge.tools_for(rnd.collector)
+        limit = get_settings().voice_max_tool_calls_per_round
         lines: list[tuple[types.FunctionCall, ToolLineDoc]] = []
+        refused: list[types.FunctionResponse] = []
         for i, call in enumerate(calls):
             name = call.name or ""
+            if rnd.tool_calls >= limit:
+                refused.append(
+                    types.FunctionResponse(id=call.id, name=call.name, response={"error": TOOL_LIMIT_MESSAGE})
+                )
+                continue
+            rnd.tool_calls += 1
             kind, title, target = describe_tool(name, call.args)
             line = ToolLineDoc(
                 id=call.id or f"call-{len(rnd.tools)}-{i}",
@@ -543,7 +588,21 @@ class VoiceSession:
                 rnd.tools[line.id] = done
                 await self.send_event(ToolEvent(turn_id=rnd.turn_id, tool=done))
             responses.append(types.FunctionResponse(id=call.id, name=call.name, response=result))
-        await session.send_tool_responses(responses)
+        await session.send_tool_responses(responses + refused)
+        if refused:
+            rnd.tool_refusals += len(refused)
+            log.warning(
+                "voice_tool_limit %s turn_id=%s calls=%d refused=%d",
+                self._log,
+                rnd.turn_id,
+                rnd.tool_calls,
+                rnd.tool_refusals,
+            )
+            if rnd.tool_refusals >= TOOL_LIMIT_REFUSALS and not rnd.answered and self.round is rnd:
+                # The model keeps calling tools instead of answering: end the round as failed (never
+                # charged); the next utterance starts a fresh round.
+                rnd.error_code = Codes.AGENT_RUN_FAILED
+                self._finalize()
 
     # ---- limits
     async def _watchdog(self) -> None:
@@ -557,8 +616,17 @@ class VoiceSession:
                 continue
             if now - self.started_at >= settings.voice_max_session_s:
                 self.end_gracefully("max_duration")
-            elif now - self.last_activity >= settings.voice_idle_timeout_s and not self._in_progress():
-                self.end_gracefully("idle")
+                continue
+            quiet = now - self.last_activity
+            if self._busy():
+                continue
+            if quiet >= settings.voice_idle_timeout_s:
+                self.stop("idle")
+            elif quiet >= self.STALE_UTTERANCE_S and self.round.user_parts and not self.round.tools:
+                # Background noise or a backchannel ("hmm") the model did not answer: drop it so it
+                # neither keeps the round open nor leaks into the next utterance.
+                log.info("voice_utterance_dropped %s chars=%d", self._log, len(self.round.user_text))
+                self.round.user_parts.clear()
 
     # ---- rounds and settlement
     def _finalize(self) -> None:

@@ -82,6 +82,8 @@ class Round:
     interrupted: bool = False  # barge-in or hang-up before the answer was complete
     error_code: str | None = None
     tool_impls: dict | None = None  # the round's ADK tools, built on the first tool call
+    tool_calls: int = 0  # tools executed in this round (VOICE_MAX_TOOL_CALLS_PER_ROUND)
+    tool_refusals: int = 0  # calls refused because the limit was reached
 
     def __post_init__(self) -> None:
         if not self.turn_id or not self.request_id:

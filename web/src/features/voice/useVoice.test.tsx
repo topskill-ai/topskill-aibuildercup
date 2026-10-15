@@ -91,7 +91,7 @@ class FakeSocket {
   }
 }
 
-import { buildStartMessage, useVoice, voiceSocketUrl } from "./useVoice";
+import { CONNECT_TIMEOUT_MS, buildStartMessage, useVoice, voiceSocketUrl } from "./useVoice";
 
 const READY = {
   type: "ready",
@@ -214,6 +214,60 @@ describe("useVoice", () => {
     act(() => FakeSocket.last!.open());
     act(() => FakeSocket.last!.server({ type: "error", code: "session_not_owned", message: "x", trace_id: "t", detail: null }));
     expect(second.cb.onStaleConversation).toHaveBeenCalled();
+  });
+
+  it("stops an answer locally when the visitor's next utterance is heard", async () => {
+    const { hook } = setup();
+    await act(() => hook.result.current.start());
+    const ws = FakeSocket.last!;
+    act(() => ws.open());
+    act(() => ws.server(READY));
+    act(() => ws.server({ type: "transcript", turn_id: "v1", role: "user", text: "Tell me a story" }));
+    expect(audio.state.flushed).toBe(0); // nothing is playing yet
+    act(() => ws.server({ type: "speaking", turn_id: "v1" }));
+    act(() => ws.onmessage!({ data: new ArrayBuffer(4800) }));
+    act(() => ws.server({ type: "transcript", turn_id: "v1", role: "user", text: " please" })); // same round
+    expect(audio.state.flushed).toBe(0);
+    act(() => ws.server({ type: "transcript", turn_id: "v2", role: "user", text: "Stop" }));
+    expect(audio.state.flushed).toBe(1);
+    act(() => ws.server({ type: "transcript", turn_id: "v2", role: "user", text: " now" }));
+    expect(audio.state.flushed).toBe(1);
+  });
+
+  it("gives up when the server is not ready in time", async () => {
+    vi.useFakeTimers();
+    try {
+      const { hook, cb } = setup();
+      await act(() => hook.result.current.start());
+      const ws = FakeSocket.last!;
+      act(() => ws.open());
+      act(() => {
+        vi.advanceTimersByTime(CONNECT_TIMEOUT_MS + 1);
+      });
+      expect(hook.result.current.state.phase).toBe("error");
+      expect(hook.result.current.state.error?.code).toBe("connection_lost");
+      expect(ws.closedWith).toBe(1000);
+      expect(cb.onEnded).toHaveBeenCalledWith(null);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a ready call past the connect timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const { hook } = setup();
+      await act(() => hook.result.current.start());
+      const ws = FakeSocket.last!;
+      act(() => ws.open());
+      act(() => ws.server(READY));
+      act(() => {
+        vi.advanceTimersByTime(CONNECT_TIMEOUT_MS + 1);
+      });
+      expect(hook.result.current.state.phase).toBe("live");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("reports a dropped connection with connection_lost", async () => {

@@ -37,6 +37,7 @@ export type VoiceServerEvent =
     }
   | { type: "transcript"; turn_id: string; role: "user" | "model"; text: string }
   | { type: "tool"; turn_id: string; tool: ToolLine }
+  | { type: "speaking"; turn_id: string }
   | { type: "interrupted"; turn_id: string }
   | {
       type: "round";

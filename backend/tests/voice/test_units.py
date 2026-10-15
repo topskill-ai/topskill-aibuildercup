@@ -175,3 +175,63 @@ def test_voice_router_is_mounted() -> None:
     app = create_app()
     assert app.state.mounted_routers[-1] == "topskill.voice.router:router"
     assert "/api/public/voice/config" in app.openapi()["paths"]
+
+
+async def test_concurrent_claims_leave_exactly_one_session() -> None:
+    import asyncio
+
+    from topskill.voice import registry
+
+    class Fake:
+        def __init__(self, name: str) -> None:
+            self.name = name
+            self.finished = asyncio.Event()
+            self.replaced = False
+
+        def replace(self) -> None:
+            self.replaced = True
+
+            async def end() -> None:  # the router releases the slot, then sets finished
+                await asyncio.sleep(0.01)
+                registry.release("u1", self)
+                self.finished.set()
+
+            asyncio.get_running_loop().create_task(end())
+
+    previous, a, b = Fake("P"), Fake("A"), Fake("B")
+    await registry.claim("u1", previous)
+    try:
+        await asyncio.gather(registry.claim("u1", a), registry.claim("u1", b))
+        assert previous.replaced
+        winner = registry.get("u1")
+        loser = a if winner is b else b
+        assert winner in (a, b) and loser.replaced and not winner.replaced
+        assert registry.active_count() == 1
+    finally:
+        for s in (previous, a, b):
+            registry.release("u1", s)
+
+
+def test_voice_session_limit_stays_inside_the_live_session_cap(monkeypatch) -> None:
+    from pydantic import ValidationError
+
+    from topskill.config import Settings
+
+    assert Settings().voice_max_session_s == 540
+    monkeypatch.setenv("VOICE_MAX_SESSION_S", "600")
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_needs_refresh() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    class Creds:
+        def __init__(self, token, valid, expiry) -> None:
+            self.token, self.valid, self.expiry = token, valid, expiry
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+    assert live._needs_refresh(Creds(None, False, None))
+    assert live._needs_refresh(Creds("t", True, now + timedelta(minutes=2)))
+    assert not live._needs_refresh(Creds("t", True, now + timedelta(minutes=30)))
+    assert not live._needs_refresh(Creds("t", True, None))

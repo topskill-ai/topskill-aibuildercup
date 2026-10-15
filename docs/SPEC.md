@@ -2051,6 +2051,7 @@ Server → client: binary PCM16 LE mono 24 kHz answer audio and JSON events:
 | `ready` | `session_id, conversation_id, model, input_sample_rate, output_sample_rate, max_session_s, idle_timeout_s, next_round_charge_cents, balance_cents` | Live session open; start streaming audio |
 | `transcript` | `turn_id, role: user\|model, text` | caption delta (append) |
 | `tool` | `turn_id, tool: ToolLine` | tool line started/finished (same shape as chat) |
+| `speaking` | `turn_id` | sent before the first audio frame of a round: the following audio belongs to `turn_id` |
 | `interrupted` | `turn_id` | barge-in: drop queued playback now |
 | `round` | `turn_id, conversation_id, message_id, outcome: ok\|failed\|aborted, citations, billing: DoneBilling` | a round was persisted (and billed when `ok`) |
 | `error` | `code, message, trace_id, detail` | terminal; same envelope and codes as REST (§6.2) |
@@ -2071,24 +2072,36 @@ the text chat's checks run (`get_public_agent` 404/410, `get_scoped_conversation
 call is refused without reaching Gemini; after every `ok` round the next round is pre-flighted again and the
 conversation limit re-checked — on failure the call ends with that error (the web opens the top-up dialog on 402).
 
-**Limits.** `VOICE_MAX_SESSION_S` (600) and `VOICE_IDLE_TIMEOUT_S` (90, no caption/audio/tool activity) end the call
-gracefully: the mic stops being forwarded, the answer in progress may finish (≤ 20 s), then `closed`. One live
-session per account (`voice.registry`): a new call ends the previous one with `replaced`. Process-wide cap
-`VOICE_MAX_SESSIONS` (20) → 429 `rate_limited`; `VOICE_SESSIONS_PER_HOUR` (30) per account via `ratelimit.hit`
-(bucket `voice_session`). The call holds the conversation's turn lock (`chat.locks.acquire_turn`), so a text reply in
-the same conversation gets 409 `turn_in_progress` and vice versa, and counts toward `MAX_CONCURRENT_TURNS`. In-process
-state is correct on one instance; scale-out = a Firestore lease per account, like §16's turn locks.
+**Limits.** `VOICE_MAX_SESSION_S` (540, at most 570, counted from the Live handshake) ends the call gracefully: the
+mic stops being forwarded, the answer in progress may finish (≤ 20 s), then `closed` — 540 + 20 s stays inside
+Vertex's ~10-minute Live session cap. `VOICE_IDLE_TIMEOUT_S` (90) ends the call when nothing was heard or said for
+that long and the model is not busy (answering or running a tool); an utterance that got no reply at all for 15 s
+(background noise, "hmm") is dropped so it neither holds the call open nor leaks into the next round. After a Live
+`go_away` the server's close is a normal end (`closed` reason `server`, an unfinished answer is saved `aborted`), not
+an error. Each Live handshake (WebSocket + `setupComplete`; genai waits for the latter without a timeout) is bounded
+by `VOICE_CONNECT_TIMEOUT_S` (12 s) per plan; a timeout counts as a failed plan (next plan, then 503). The web gives
+up after 30 s without `ready` (`connection_lost`). A round runs at most `VOICE_MAX_TOOL_CALLS_PER_ROUND` (8) tools;
+further calls get `{"error": "Tool limit reached for this answer. Answer now without tools."}`, and after two refused
+calls without an answer the round ends `failed` (`agent_run_failed`, never charged). One live session per account
+(`voice.registry`; `claim` re-reads the slot after every wait, so racing calls of one account still leave exactly
+one): a new call ends the previous one with `replaced`. Process-wide cap `VOICE_MAX_SESSIONS` (20) → 429
+`rate_limited`; `VOICE_SESSIONS_PER_HOUR` (30) per account via `ratelimit.hit` (bucket `voice_session`). The call
+holds the conversation lock and one of the account's `MAX_TURNS_PER_USER` (3) slots (`chat.locks.acquire_conversation`),
+so a text reply in the same conversation gets 409 `turn_in_progress` and vice versa; it takes no
+`MAX_CONCURRENT_TURNS` slot, so open calls never crowd out text turns. In-process state is correct on one instance;
+scale-out = a Firestore lease per account, like §16's turn locks.
 
 **Config** (`topskill.config.Settings`, prod values = code defaults): `VOICE_ENABLED=true`,
 `VOICE_MODEL=gemini-live-2.5-flash`, `VOICE_LOCATION=global`, `VOICE_MODEL_FALLBACK=gemini-live-2.5-flash-native-audio`,
-`VOICE_LOCATION_FALLBACK=us-central1`, `VOICE_MAX_SESSION_S=600`, `VOICE_IDLE_TIMEOUT_S=90`, `VOICE_AUTH_TIMEOUT_S=10`,
-`VOICE_MAX_SESSIONS=20`, `VOICE_SESSIONS_PER_HOUR=30`. Feature flag: `VOICE_ENABLED=false` hides the mic (config
+`VOICE_LOCATION_FALLBACK=us-central1`, `VOICE_MAX_SESSION_S=540`, `VOICE_IDLE_TIMEOUT_S=90`, `VOICE_AUTH_TIMEOUT_S=10`,
+`VOICE_MAX_SESSIONS=20`, `VOICE_SESSIONS_PER_HOUR=30`, `VOICE_CONNECT_TIMEOUT_S=12`, `VOICE_MAX_TOOL_CALLS_PER_ROUND=8`. Feature flag: `VOICE_ENABLED=false` hides the mic (config
 endpoint) and refuses sockets with 503; when Gemini Live is unreachable the call fails with 503
 `service_unavailable` ("keep chatting by text") and text chat is unaffected (fail-open for the page, fail-closed for
 billing: nothing is charged without a persisted answer).
 
 **IAM.** None new: Live runs on Vertex AI with the runtime SA's existing `roles/aiplatform.user` (project-wide, so
-the `us-central1` fallback is covered). Cloud Run already supports WebSockets on the service (request timeout 3600 s
+the `us-central1` fallback is covered). The ADC credentials are loaded once and refreshed in a worker thread before
+each connect (otherwise genai refreshes them synchronously on the event loop for every call). Cloud Run already supports WebSockets on the service (request timeout 3600 s
 ≥ max session). Locally, an HTTP proxy that answers `CONNECT` with HTTP/1.0 breaks `websockets`; use
 `WSS_PROXY=socks5h://…` with `uv run --with 'python-socks[asyncio]' …`.
 
@@ -2096,7 +2109,10 @@ the `us-central1` fallback is covered). Cloud Run already supports WebSockets on
 permission (`getUserMedia` with echo cancellation, noise suppression, AGC; denied → "Microphone access is blocked"
 with no socket opened; non-secure page → explained) → WebSocket → `start` → audio only after `ready`. Capture: one
 AudioContext; an AudioWorklet decimates to 16 kHz PCM16 40 ms frames. Playback: 24 kHz chunks scheduled back to back;
-`interrupted` stops every scheduled source at once. The call panel replaces the composer (works at 375 px): state
+`interrupted` stops every scheduled source at once. Live sends `interrupted` also for speech that starts after the
+answer was fully generated (`turn_complete`) while the browser is still playing it (verified for both models,
+2026-10-15, `test_live.py`); as a local fallback the web also flushes playback when a user caption of another
+`turn_id` than the audio being played (`speaking` / model captions) arrives. The call panel replaces the composer (works at 375 px): state
 (Connecting / Listening / Thinking / Speaking / Call ended / Call failed), timer against the limit, live captions of
 the last two rounds with tool lines and the charge of each round, mute, End call; errors show `trace_id` and "Try
 again". Each `round` reloads the conversation so the transcript (with citations) appears in the chat.
@@ -2104,7 +2120,9 @@ again". Each `round` reloads the conversation so the transcript (with citations)
 **Tests.** `backend/tests/voice/` — scripted Live fake over an in-process ASGI WebSocket (rounds, tools, web
 grounding, barge-in mid-answer vs after the answer, hang-up, idle and max duration, 402 before and after a round,
 creator unavailable, conversation limit, auth/origin/first-frame/timeout, scoping, offline agent, text lock, replace,
-cap, model fallback, Live down, Live error mid-answer, records extraction); `test_live.py` (`-m live`) streams a
-`say`-generated question to real Gemini Live and asserts captions, audio and a settled, charged round;
+cap, model fallback, Live down, Live error mid-answer, records extraction, handshake timeout, no text-slot use,
+idle with an unanswered utterance, stale utterance, tool cap, close after GoAway, racing claims); `test_live.py`
+(`-m live`) streams a `say`-generated question to real Gemini Live and asserts captions, audio and a settled, charged
+round, and that speech after `turn_complete` still yields `interrupted`;
 `backend/scripts/voice_e2e.py` is the same check against a running backend (dev or prod). Web:
 `web/src/features/voice/*.test.ts(x)`.

@@ -124,8 +124,9 @@ async def voice_socket(ws: WebSocket, slug: str) -> None:
         session = VoiceSession(ws, setup)
         await registry.claim(user.uid, session)
         # A text reply running in this conversation → 409 turn_in_progress; the lock also keeps text
-        # turns out of the conversation while the call lasts and counts toward MAX_CONCURRENT_TURNS.
-        locks.acquire_turn(setup.conversation_id)
+        # turns out of the conversation while the call lasts and counts toward the account's turn limit.
+        # No MAX_CONCURRENT_TURNS slot: VOICE_MAX_SESSIONS caps calls, so they never starve text turns.
+        locks.acquire_conversation(setup.conversation_id, user.uid)
         lock_held = setup.conversation_id
         await session.run()
     except ApiError as exc:
@@ -141,7 +142,7 @@ async def voice_socket(ws: WebSocket, slug: str) -> None:
         )
     finally:
         if lock_held is not None:
-            locks.release_turn(lock_held)
+            locks.release_conversation(lock_held)
         if session is not None:
             if uid is not None:
                 registry.release(uid, session)

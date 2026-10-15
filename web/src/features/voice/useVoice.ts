@@ -4,7 +4,10 @@
  * Order on "start": sign-in → microphone permission (fails fast, before any network) → WebSocket to the
  * Cloud Run URL (Firebase Hosting does not proxy WebSockets) → `start` frame with the Firebase ID token
  * (or the developer identity in dev) → audio frames only after `ready`.
- * Barge-in: the server's `interrupted` event flushes queued playback at once.
+ * Barge-in: the server's `interrupted` event flushes queued playback at once; as a local fallback, a
+ * caption of the visitor's next utterance (another `turn_id` than the audio being played, announced by
+ * `speaking`) flushes it too.
+ * A connection that is not `ready` within CONNECT_TIMEOUT_MS fails with `connection_lost`.
  */
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useReducer, useRef } from "react";
@@ -21,6 +24,8 @@ import { initialVoiceState, voiceReducer, type VoiceError } from "./voiceState";
 const OUTPUT_RATE = 24_000;
 const INPUT_RATE = 16_000;
 const STOP_GRACE_MS = 3_000;
+/** Above the server's worst case (two Live plans × VOICE_CONNECT_TIMEOUT_S 12 s). */
+export const CONNECT_TIMEOUT_MS = 30_000;
 
 /** `GET /api/public/voice/config`; any failure hides the mic button (text chat is unaffected). */
 export function useVoiceConfig() {
@@ -75,6 +80,9 @@ interface Call {
   player: PcmPlayer | null;
   terminal: boolean;
   stopTimer: ReturnType<typeof setTimeout> | null;
+  connectTimer: ReturnType<typeof setTimeout> | null;
+  /** The round whose audio the player holds (from `speaking` / model captions). */
+  playingTurnId: string | null;
 }
 
 export function useVoice(opts: UseVoiceOptions) {
@@ -92,6 +100,8 @@ export function useVoice(opts: UseVoiceOptions) {
     call.mic = null;
     if (call.stopTimer) clearTimeout(call.stopTimer);
     call.stopTimer = null;
+    if (call.connectTimer) clearTimeout(call.connectTimer);
+    call.connectTimer = null;
     const ctx = call.ctx;
     const player = call.player;
     if (flush) player?.flush();
@@ -117,7 +127,16 @@ export function useVoice(opts: UseVoiceOptions) {
     const signedIn = await ensureSignedIn({ reason: `Sign in to talk with ${optsRef.current.agentTitle}.` });
     if (!signedIn) return;
 
-    const call: Call = { socket: null, ctx: null, mic: null, player: null, terminal: false, stopTimer: null };
+    const call: Call = {
+      socket: null,
+      ctx: null,
+      mic: null,
+      player: null,
+      terminal: false,
+      stopTimer: null,
+      connectTimer: null,
+      playingTurnId: null,
+    };
     callRef.current = call;
     dispatch({ type: "connect" });
 
@@ -148,6 +167,12 @@ export function useVoice(opts: UseVoiceOptions) {
       const socket = new WebSocket(voiceSocketUrl(optsRef.current.slug));
       socket.binaryType = "arraybuffer";
       call.socket = socket;
+      call.connectTimer = setTimeout(() => {
+        call.connectTimer = null;
+        if (ready || call.terminal) return;
+        fail(call, clientError(VoiceClientCodes.connection_lost, "The voice connection could not be set up. Please try again."));
+        optsRef.current.onEnded?.(null);
+      }, CONNECT_TIMEOUT_MS);
       socket.onopen = () => {
         void buildStartMessage(optsRef.current.conversationId).then((msg) => {
           if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(msg));
@@ -168,9 +193,25 @@ export function useVoice(opts: UseVoiceOptions) {
         switch (event.type) {
           case "ready":
             ready = true;
+            if (call.connectTimer) clearTimeout(call.connectTimer);
+            call.connectTimer = null;
+            break;
+          case "speaking":
+            call.playingTurnId = event.turn_id;
+            break;
+          case "transcript":
+            if (event.role === "model") {
+              call.playingTurnId = event.turn_id;
+            } else if (call.playingTurnId !== null && event.turn_id !== call.playingTurnId) {
+              // The visitor speaks over an answer the server already finished generating: stop it here
+              // even if no `interrupted` event arrives.
+              call.player?.flush();
+              call.playingTurnId = null;
+            }
             break;
           case "interrupted":
             call.player?.flush();
+            call.playingTurnId = null;
             break;
           case "round":
             o.onRound?.(event.conversation_id);
