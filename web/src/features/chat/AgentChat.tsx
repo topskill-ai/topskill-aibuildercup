@@ -14,9 +14,14 @@ import { Paywall } from "./Paywall";
 import { BillingHint, UnavailableState } from "./StateViews";
 import { useChat } from "./useChat";
 
-/** Scroll the window to the bottom while new content streams in, unless the reader scrolled up. */
-function useStickToBottom(dep: unknown) {
+/**
+ * Scroll the window to the bottom while new content streams in, unless the reader scrolled up.
+ * An empty transcript never scrolls (the agent header stays in view on first load); a new
+ * message re-pins so the visitor always sees the turn they just started.
+ */
+function useStickToBottom(count: number, dep: unknown) {
   const pinned = useRef(true);
+  const lastCount = useRef(0);
   useEffect(() => {
     const onScroll = () => {
       const el = document.scrollingElement ?? document.documentElement;
@@ -26,10 +31,14 @@ function useStickToBottom(dep: unknown) {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
   useLayoutEffect(() => {
+    const grew = count > lastCount.current;
+    lastCount.current = count;
+    if (count === 0) return;
+    if (grew) pinned.current = true;
     if (!pinned.current) return;
     const el = document.scrollingElement ?? document.documentElement;
     if (el.scrollHeight > window.innerHeight) window.scrollTo({ top: el.scrollHeight });
-  }, [dep]);
+  }, [count, dep]);
 }
 
 /**
@@ -45,7 +54,7 @@ export function AgentChat({ agent }: { agent: PublicAgent }) {
   const [draft, setDraft] = useState("");
 
   const lastMessage = chat.messages[chat.messages.length - 1];
-  useStickToBottom(`${chat.messages.length}:${lastMessage?.text.length ?? 0}:${lastMessage?.tools.length ?? 0}`);
+  useStickToBottom(chat.messages.length, `${chat.messages.length}:${lastMessage?.text.length ?? 0}:${lastMessage?.tools.length ?? 0}`);
 
   const billingUnavailable =
     hasCode(billing.error, ErrorCodes.agent_offline, ErrorCodes.agent_not_found) ||

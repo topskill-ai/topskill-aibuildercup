@@ -236,6 +236,28 @@ describe("AgentChat", () => {
     await waitFor(() => expect(sessionStorage.getItem(transcriptKey("visa-advisor", "cnv_abc"))).toContain("The EU Blue Card fits"));
   });
 
+  it("does not scroll an empty transcript, and pins to the bottom once a turn starts", async () => {
+    const root = document.scrollingElement ?? document.documentElement;
+    const heightSpy = vi.spyOn(root, "scrollHeight", "get").mockReturnValue(5_000);
+    const scrollTo = vi.fn();
+    vi.stubGlobal("scrollTo", scrollTo);
+    try {
+      setup((url, init) => {
+        if (url.pathname !== "/api/public/agents/visa-advisor/chat") return undefined;
+        const { turn_id } = chatBody(init);
+        return sseChunks([statusFrame(turn_id), frame("text_delta", { delta: "Blue Card." }), doneFrame(turn_id)]);
+      });
+      const starter = await screen.findByRole("button", { name: "Brazil to Germany?" });
+      expect(scrollTo).not.toHaveBeenCalled();
+
+      await userEvent.click(starter);
+      await screen.findByTestId("model-message");
+      expect(scrollTo).toHaveBeenCalledWith({ top: 5_000 });
+    } finally {
+      heightSpy.mockRestore();
+    }
+  });
+
   it("opens the paywall on 402, keeps the draft when closed, and resends it after a top-up", async () => {
     let balance = 40;
     const fetchMock = setup((url, init) => {
