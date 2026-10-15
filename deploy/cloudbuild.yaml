@@ -1,0 +1,74 @@
+# Build the backend image and deploy it to Cloud Run (SPEC 13.2).
+# Submit from the repo root (the build source; see .gcloudignore):
+#   gcloud builds submit . --config deploy/cloudbuild.yaml --substitutions _SHA=<sha> \
+#     --project top-skill --region asia-southeast1
+# _SHA has no default on purpose: a missing substitution fails the build instead of producing "api:".
+# $SHORT_SHA is never used (it is empty for `gcloud builds submit`).
+substitutions:
+  _REGION: asia-southeast1
+  _IMAGE: asia-southeast1-docker.pkg.dev/top-skill/topskill/api
+  _SERVICE: topskill-api
+  _RUNTIME_SA: topskill-api@top-skill.iam.gserviceaccount.com
+
+options:
+  dynamicSubstitutions: true
+
+steps:
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - deploy/backend.Dockerfile
+      - -t
+      - ${_IMAGE}:${_SHA}
+      - -t
+      - ${_IMAGE}:latest
+      - backend
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args: [push, --all-tags, "${_IMAGE}"]
+
+  - id: env-file
+    # prod.env.yaml + APP_VERSION (gcloud cannot combine --env-vars-file with --update-env-vars).
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        cp deploy/env/prod.env.yaml /workspace/run.env.yaml
+        printf '\nAPP_VERSION: "%s"\n' "${_SHA}" >> /workspace/run.env.yaml
+
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_IMAGE}:${_SHA}
+      - --region=${_REGION}
+      - --service-account=${_RUNTIME_SA}
+      - --allow-unauthenticated
+      - --timeout=3600
+      - --min-instances=1
+      - --max-instances=1
+      - --concurrency=80
+      - --cpu=2
+      - --memory=2Gi
+      - --no-cpu-throttling
+      - --cpu-boost
+      - --execution-environment=gen2
+      - --port=8080
+      - --env-vars-file=/workspace/run.env.yaml
+      - --set-secrets=MANDATE_SIGNING_KEY=mandate-signing-key:latest,GEMINI_API_KEY=gemini-api-key:latest
+      - --startup-probe=httpGet.path=/healthz,httpGet.port=8080,periodSeconds=5,timeoutSeconds=3,failureThreshold=24
+      - --labels=app=topskill,sha=${_SHA}
+      - --quiet
+
+images:
+  - ${_IMAGE}:${_SHA}
+  - ${_IMAGE}:latest
+
+timeout: 1200s
