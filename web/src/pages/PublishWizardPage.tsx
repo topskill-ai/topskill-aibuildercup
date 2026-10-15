@@ -116,7 +116,11 @@ export default function PublishWizardPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
 
-  const [step, setStep] = useState<WizardStep>("upload");
+  const [step, setStepState] = useState<WizardStep>("upload");
+  const setStep = (s: WizardStep) => {
+    setStepState(s);
+    window.scrollTo({ top: 0 });
+  };
   const [form, setForm] = useState<WizardForm>(() => emptyForm(""));
   const [skill, setSkill] = useState<Skill | null>(null);
   const [knowledge, setKnowledge] = useState<File[]>([]);

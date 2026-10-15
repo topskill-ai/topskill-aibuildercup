@@ -167,7 +167,7 @@ export default function RecordDetailPage() {
                       </div>
                       <div className="min-w-0 break-words">
                         {formatRecordValue(f, v)}
-                        {v?.evidence ? <div className="mt-0.5 text-[13px] text-subtle">“{v.evidence}”</div> : null}
+                        {v?.evidence && v.evidence !== "•••" ? <div className="mt-0.5 text-[13px] text-subtle">“{v.evidence}”</div> : null}
                       </div>
                     </div>
                   );

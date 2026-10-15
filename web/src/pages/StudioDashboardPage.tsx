@@ -137,52 +137,17 @@ export default function StudioDashboardPage() {
         />
       </section>
 
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <div className="min-w-0 space-y-6">
-          <Card>
-            <CardHeader title="Income by channel" description="All-time creator income, split by who paid." />
-            <div className="p-5">
-              {loading ? (
-                <SkeletonRows rows={1} />
-              ) : (
-                <ChannelBar visitorCents={d?.visitor_income_cents ?? 0} a2aCents={d?.a2a_income_cents ?? 0} />
-              )}
-            </div>
-          </Card>
-
-          <Card>
-            <CardHeader
-              title="Your agents"
-              actions={
-                <Link to="/studio/new" className={buttonClasses({ variant: "outline", size: "sm" })}>
-                  <Plus aria-hidden className="h-4 w-4" />
-                  New agent
-                </Link>
-              }
-            />
-            <div className="pt-3">
-              {loading ? (
-                <SkeletonRows rows={3} className="p-5" />
-              ) : d && d.agents.length > 0 ? (
-                <AgentsTable agents={d.agents} />
-              ) : (
-                <div className="p-5">
-                  <EmptyState
-                    icon={<Rocket />}
-                    title="Publish your first agent"
-                    description="Drop a SKILL.md and Gemini drafts the whole listing. It takes about a minute."
-                    action={
-                      <Link to="/studio/new" className={buttonClasses()}>
-                        <Sparkles aria-hidden className="h-4 w-4" />
-                        Publish a skill
-                      </Link>
-                    }
-                  />
-                </div>
-              )}
-            </div>
-          </Card>
-        </div>
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+        <Card className="h-max">
+          <CardHeader title="Income by channel" description="All-time creator income, split by who paid." />
+          <div className="p-5">
+            {loading ? (
+              <SkeletonRows rows={1} />
+            ) : (
+              <ChannelBar visitorCents={d?.visitor_income_cents ?? 0} a2aCents={d?.a2a_income_cents ?? 0} />
+            )}
+          </div>
+        </Card>
 
         <Card className="h-max">
           <CardHeader title="Recent income" description="Visitor rounds and A2A calls, newest first." />
@@ -195,6 +160,41 @@ export default function StudioDashboardPage() {
               <p className="px-5 pb-5 text-sm text-muted">
                 No income yet. Share your agent's link or make it callable over A2A to start earning.
               </p>
+            )}
+          </div>
+        </Card>
+      </div>
+
+      <div className="mt-6">
+        <Card>
+          <CardHeader
+            title="Your agents"
+            actions={
+              <Link to="/studio/new" className={buttonClasses({ variant: "outline", size: "sm" })}>
+                <Plus aria-hidden className="h-4 w-4" />
+                New agent
+              </Link>
+            }
+          />
+          <div className="pt-3">
+            {loading ? (
+              <SkeletonRows rows={3} className="p-5" />
+            ) : d && d.agents.length > 0 ? (
+              <AgentsTable agents={d.agents} />
+            ) : (
+              <div className="p-5">
+                <EmptyState
+                  icon={<Rocket />}
+                  title="Publish your first agent"
+                  description="Drop a SKILL.md and Gemini drafts the whole listing. It takes about a minute."
+                  action={
+                    <Link to="/studio/new" className={buttonClasses()}>
+                      <Sparkles aria-hidden className="h-4 w-4" />
+                      Publish a skill
+                    </Link>
+                  }
+                />
+              </div>
             )}
           </div>
         </Card>

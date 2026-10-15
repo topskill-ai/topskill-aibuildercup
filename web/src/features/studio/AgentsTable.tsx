@@ -31,7 +31,7 @@ export function AgentsTable({ agents }: { agents: AgentSummary[] }) {
               <th className="px-3 py-2.5 font-medium">Status</th>
               <th className="px-3 py-2.5 font-medium">Price</th>
               <th className="px-3 py-2.5 text-right font-medium">Rounds</th>
-              <th className="px-3 py-2.5 text-right font-medium">A2A calls</th>
+              <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">A2A calls</th>
               <th className="px-5 py-2.5 text-right font-medium">Earned</th>
             </tr>
           </thead>
@@ -51,7 +51,7 @@ export function AgentsTable({ agents }: { agents: AgentSummary[] }) {
                   <StatusBadges a={a} />
                 </td>
                 <td className="px-3 py-3 whitespace-nowrap text-muted">{priceLabel(a.pricing)}</td>
-                <td className="px-3 py-3 text-right font-mono tabular-nums">
+                <td className="px-3 py-3 text-right font-mono whitespace-nowrap tabular-nums">
                   {formatNumber(a.stats.rounds)}
                   <span className="text-subtle"> / {formatNumber(a.stats.paid_rounds)} paid</span>
                 </td>

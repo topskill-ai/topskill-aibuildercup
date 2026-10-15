@@ -52,7 +52,6 @@ export function OverviewTab({
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-2">
-        <KnowledgeBadge agent={agent} onOpen={() => onOpenTab("knowledge")} />
         <Badge variant="outline">{priceLabel(agent.pricing)}</Badge>
         <Badge variant="outline">{a2aPriceLabel(agent.pricing)}</Badge>
         <Badge variant="outline">Version {agent.active_version}</Badge>
