@@ -5,7 +5,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, BookOpen, CheckCircle2, FilePlus2, Rocket, Timer, Trash2 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router";
+import { useBlocker, useNavigate } from "react-router";
 import { hasCode, ErrorCodes } from "@/api/errors";
 import { useMeta } from "@/api/meta";
 import { queryKeys } from "@/api/queryClient";
@@ -143,6 +143,12 @@ export default function PublishWizardPage() {
   const elapsed = finishedMs ?? (startedAt !== null ? now - startedAt : 0);
   const busy = phase !== "editing";
   useBeforeUnload(busy);
+  // Keep the creator on the page while the agent is created and knowledge files upload.
+  const leaving = useRef(false);
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      busy && !leaving.current && currentLocation.pathname !== nextLocation.pathname,
+  );
 
   // The model defaults to meta.default_chat_model once meta has loaded.
   const effective = useMemo<WizardForm>(
@@ -256,6 +262,7 @@ export default function PublishWizardPage() {
               ? "Knowledge files are being indexed."
               : undefined,
       });
+      leaving.current = true;
       setPhase("editing");
       navigate(`/studio/agents/${agent.id}?tab=overview`, { replace: true });
     },
@@ -483,6 +490,24 @@ export default function PublishWizardPage() {
           </div>
         ) : null}
       </Card>
+
+      <Dialog
+        open={blocker.state === "blocked"}
+        onOpenChange={(o) => !o && blocker.reset?.()}
+        title="Uploads are still running"
+        description="Your agent is published, but leaving now stops the remaining knowledge uploads. You can add them later in the Knowledge tab."
+        size="sm"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => blocker.reset?.()}>
+              Stay
+            </Button>
+            <Button variant="danger" onClick={() => blocker.proceed?.()}>
+              Leave anyway
+            </Button>
+          </>
+        }
+      />
 
       <Dialog
         open={confirmRedraft !== null}
