@@ -36,7 +36,7 @@ from topskill import ratelimit, tasks
 from topskill.auth import CurrentUser
 from topskill.config import get_settings
 from topskill.db import Col, get_db
-from topskill.domain import VerifiedMandate
+from topskill.domain import AgentDoc, VerifiedMandate
 from topskill.errors import ApiError, Codes, current_trace_id
 from topskill.events import (
     A2ACallData,
@@ -358,7 +358,13 @@ class AssistantRun:
         self.calls += 1
         tool_id = self._tool_id("call")
         slug = (slug or "").strip().lower()
-        name = self.discovered[slug].name if slug in self.discovered else slug
+        agent: AgentDoc | None = None
+        load_error: ApiError | None = None
+        try:
+            agent = await load_a2a_agent(slug)
+        except ApiError as err:
+            load_error = err
+        name = agent.title if agent else (self.discovered[slug].name if slug in self.discovered else slug)
         preview = _clip(request or "", REQUEST_PREVIEW_CHARS)
         self.out.emit(
             EventName.TOOL_START,
@@ -398,11 +404,12 @@ class AssistantRun:
             return await reject(Codes.VALIDATION_ERROR)
 
         # b. in-process pre-check (no HTTP)
-        price = 0
+        if agent is None:
+            assert load_error is not None
+            log.info("assistant_call_rejected slug=%s code=%s", slug, load_error.code)
+            return await reject(load_error.code)
+        price = agent.pricing.a2a_price_cents
         try:
-            agent = await load_a2a_agent(slug)
-            name = agent.title
-            price = agent.pricing.a2a_price_cents
             mandate = await verify_token(self.token, slug)
             price = await _deps.billing().preflight_a2a(agent, mandate)
             if price > mandate.max_amount_cents:

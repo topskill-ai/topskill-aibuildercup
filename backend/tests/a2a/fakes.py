@@ -7,6 +7,7 @@ exactly the §14.2 signatures the a2a code uses (``preflight_a2a``, ``settle_a2a
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -70,6 +71,8 @@ class ScriptedLlm(BaseLlm):
         step = self.steps[min(len(self.requests) - 1, len(self.steps) - 1)]
         if callable(step) and not isinstance(step, LlmResponse):
             step = step(llm_request)
+            if inspect.isawaitable(step):
+                step = await step
         if isinstance(step, BaseException):
             raise step
         yield step
