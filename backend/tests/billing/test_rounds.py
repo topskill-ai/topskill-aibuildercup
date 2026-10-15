@@ -184,11 +184,23 @@ async def test_free_mode_never_charges() -> None:
     assert charge.outcome == "free" and charge.free_rounds_left is None and charge.round_index == 1
 
 
-async def test_settlement_reads_live_pricing() -> None:
+async def test_settlement_reads_live_pricing_but_never_above_the_turn_start_price() -> None:
     _owner, visitor, agent = await _setup(pricing={"free_rounds": 0, "price_cents": 100})
-    await get_db().collection(Col.AGENTS).document(agent.id).update({"pricing.price_cents": 300})
-    charge, _ = await settle(billing, agent, visitor)  # `agent` still carries the stale price
-    assert charge.charged_cents == 300 and charge.creator_share_cents == 240
+    ref = get_db().collection(Col.AGENTS).document(agent.id)
+    await ref.update({"pricing.price_cents": 60})
+    charge, _ = await settle(billing, agent, visitor)  # `agent` is the doc the turn started with
+    assert charge.charged_cents == 60 and charge.creator_share_cents == 48  # a cut applies at once
+    await ref.update({"pricing.price_cents": 100_000})  # creator hikes the price mid-turn
+    charge, _ = await settle(billing, agent, visitor)
+    assert charge.charged_cents == 100 and charge.balance_cents == 10_000 - 60 - 100
+
+
+async def test_free_to_paid_switch_mid_turn_is_free() -> None:
+    _owner, visitor, agent = await _setup(pricing={"mode": "free", "free_rounds": 0, "price_cents": 0})
+    ref = get_db().collection(Col.AGENTS).document(agent.id)
+    await ref.update({"pricing.mode": "per_round", "pricing.price_cents": 500})
+    charge, _ = await settle(billing, agent, visitor)
+    assert charge.outcome == "free" and charge.charged_cents == 0
 
 
 async def test_creator_balance_gate_runs_before_visitor_gate() -> None:

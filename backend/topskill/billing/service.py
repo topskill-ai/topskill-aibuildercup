@@ -309,11 +309,18 @@ async def settle_round(
         elif is_owner:
             outcome = "free"
         else:
+            # Live pricing, but never above what the turn started with (``agent`` is the doc read before
+            # preflight): a price raised mid-turn must not charge the visitor more than the quote.
+            start = agent.pricing
             round_index = used + 1
-            if pricing.mode == "free" or round_index <= pricing.free_rounds:
+            if (
+                pricing.mode == "free"
+                or start.mode == "free"
+                or round_index <= max(pricing.free_rounds, start.free_rounds)
+            ):
                 outcome = "free"
             else:
-                charged = min(pricing.price_cents, max(balance, 0))
+                charged = min(pricing.price_cents, start.price_cents, max(balance, 0))
                 outcome = "charged" if charged > 0 else "free"
         share = money.creator_share(charged)
         counted = succeeded and not is_owner

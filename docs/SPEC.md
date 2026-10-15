@@ -1210,7 +1210,7 @@ Order (stop at the first failure):
 2. `get_or_open_wallet(payer)` and `get_or_open_wallet(agent.owner_uid)` (both idempotent T1; never `get_balance` in a gate).
 3. **Creator balance ≤ 0** → 402 `insufficient_points` `{reason: "owner", slug}`. Applies to all of the creator's agents, including free agents and the owner's own testing. Visitor UI shows "This agent is temporarily unavailable" (never ask the visitor to top up).
 4. If payer is not the owner and mode is `per_round` and `usage.rounds_used + 1 > free_rounds` and `payer balance < price_cents` → 402 `visitor_insufficient_points` `{required_cents: price, balance_cents, price_cents, billing_mode: "per_round", slug}`.
-Returns `RoundQuote` (§14.2). The quote is advisory; settlement recomputes.
+Returns `RoundQuote` (§14.2). The quote is advisory; settlement recomputes, but never charges more than the pricing the turn started with (§8.5).
 
 ### 8.3 Ledger categories [billing]
 | category | kind | sign | written by |
@@ -1238,15 +1238,16 @@ Settlement idempotency for rounds is the model-message doc `m_{request_id}`: if 
 ```
 reads:  msg = messages/m_{request_id}           -> exists? return RoundCharge(outcome="duplicate", …from msg.charge)
         conv = conversations/{cid}              -> conversation_exists = conv.exists
-        agent = agents/{agent_id}               (live pricing)
+        agent = agents/{agent_id}               (live pricing; capped by the turn-start `agent` passed in)
         payer_wallet, owner_wallet (if payer != owner; may be missing), usage/{agent}__{payer}
 compute:
   if not succeeded:        outcome = "not_counted"; charged = 0; round_index = None
   elif payer == owner:     outcome = "free"; charged = 0; round_index = None (owner rounds are not numbered)
   else:
      round_index = usage.rounds_used + 1
-     if mode == "free" or round_index <= free_rounds: outcome = "free"; charged = 0
-     else: charged = min(price_cents, max(payer_wallet.balance, 0)); outcome = "charged" if charged > 0 else "free"
+     if mode == "free" (live or at turn start) or round_index <= max(free_rounds live, at turn start): outcome = "free"; charged = 0
+     else: charged = min(live price_cents, turn-start price_cents, max(payer_wallet.balance, 0)); outcome = "charged" if charged > 0 else "free"
+     # a price raised (or free → per_round) while the turn runs never applies to that turn
      share = charged * BP // 10000
 writes (only now):
   write_messages(tx, charge, conversation_exists)     # chat writer: user msg u_*, model msg m_* (with charge), conversation doc
@@ -1329,7 +1330,7 @@ Issued by `POST /api/mandates` (creates `mandates/{jti}` first, then signs). Dev
 ### 8.8 Versioning [publish]
 - Version = immutable snapshot `AgentVersion` built from current `AgentDoc.config` + skill refs + `title`.
 - **Needs a new version** (sets `config_dirty`): `config.*` (soul, model, temperature, web_search_enabled, skill_ids, record_schema).
-- **Applies immediately**: title (prompt uses the version's title; public page uses the live title), tagline, description, avatar, greeting, placeholder, starter questions, capabilities, accent, pricing (read live at charge time), listed, creator name/headline, **knowledge files** (§10.1).
+- **Applies immediately**: title (prompt uses the version's title; public page uses the live title), tagline, description, avatar, greeting, placeholder, starter questions, capabilities, accent, pricing (read live at charge time, never above the price the turn started with), listed, creator name/headline, **knowledge files** (§10.1).
 - `POST /versions` always rebuilds from current config (re-running `load_skill_refs(owner_uid, config.skill_ids)`), activates it, and sets `status=active`.
 - Rollback = activate an older version; `config` is not rewritten.
 - Changing a record field's `type` when any record has a value for that key → 409 `record_field_type_locked` (`records.assert_schema_change_allowed`).
