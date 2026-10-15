@@ -29,7 +29,7 @@ import { callErrorText, useNow } from "@/features/mandates/model";
 import { cn } from "@/lib/cn";
 import { formatCredits } from "@/lib/money";
 import { useAgentLook } from "@/features/mandates/agentLook";
-import { summarizeTurn, type CallItem, type DiscoverItem, type TimelineItem, type ToolItem, type Turn } from "./timeline";
+import { discoverSeenBefore, summarizeTurn, tidyPreview, type CallItem, type DiscoverItem, type TimelineItem, type ToolItem, type Turn } from "./timeline";
 
 // ---------------------------------------------------------------------------------------------
 // Layout primitives
@@ -91,9 +91,15 @@ function DiscoveredAgentCard({ agent }: { agent: DiscoveredAgent }) {
   );
 }
 
-function DiscoverNode({ item }: { item: DiscoverItem }) {
+/**
+ * One directory search. When the assistant searches more than once in a turn, a later card shows
+ * only the agents it has not shown yet, so the timeline never repeats the same cards.
+ */
+function DiscoverNode({ item, seenBefore }: { item: DiscoverItem; seenBefore: ReadonlySet<string> }) {
   const running = item.status === "running";
   const failed = item.status === "error" && item.agents.length === 0;
+  const fresh = item.agents.filter((a) => !seenBefore.has(a.slug));
+  const repeat = seenBefore.size > 0;
   return (
     <Node icon={<Search />} tone={failed ? "danger" : running ? "primary" : "primary"} pulse={running}>
       <div className="flex flex-wrap items-baseline gap-x-2 pt-1">
@@ -102,19 +108,23 @@ function DiscoverNode({ item }: { item: DiscoverItem }) {
             ? "Searching the TopSkill directory…"
             : failed
               ? "Agent directory unavailable"
-              : `Discovered ${item.agents.length} ${item.agents.length === 1 ? "agent" : "agents"}`}
+              : repeat && item.agents.length > 0 && fresh.length === 0
+                ? "No new agents"
+                : `Discovered ${fresh.length}${repeat ? " more" : ""} ${fresh.length === 1 ? "agent" : "agents"}`}
         </span>
         {item.query ? <span className="min-w-0 truncate text-[13px] text-muted">for “{item.query}”</span> : null}
       </div>
-      {item.agents.length > 0 ? (
+      {fresh.length > 0 ? (
         <>
           <p className="mt-0.5 text-[13px] text-subtle">Read from each agent’s A2A Agent Card.</p>
           <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(min(100%,220px),1fr))]">
-            {item.agents.map((a) => (
+            {fresh.map((a) => (
               <DiscoveredAgentCard key={a.slug} agent={a} />
             ))}
           </div>
         </>
+      ) : item.agents.length > 0 ? (
+        <p className="mt-0.5 text-[13px] text-subtle">The matching agents are already listed above.</p>
       ) : running ? (
         <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
           {[0, 1, 2].map((i) => (
@@ -273,7 +283,7 @@ function CallNode({ item }: { item: CallItem }) {
           <CallStatusLine item={item} />
           {item.requestPreview ? (
             <p className="line-clamp-2 border-l-2 border-border pl-3 text-[13px] text-muted" title={item.requestPreview}>
-              {item.requestPreview}
+              {tidyPreview(item.requestPreview)}
             </p>
           ) : null}
           {item.answerPreview ? (
@@ -320,8 +330,8 @@ function ToolNode({ item }: { item: ToolItem }) {
   );
 }
 
-function ItemNode({ item }: { item: TimelineItem }) {
-  if (item.kind === "discover") return <DiscoverNode item={item} />;
+function ItemNode({ item, seenBefore }: { item: TimelineItem; seenBefore: ReadonlySet<string> }) {
+  if (item.kind === "discover") return <DiscoverNode item={item} seenBefore={seenBefore} />;
   if (item.kind === "call") return <CallNode item={item} />;
   return <ToolNode item={item} />;
 }
@@ -365,6 +375,7 @@ export function TurnView({ turn, onReauthorise }: TurnViewProps) {
     (i) => (i.kind === "discover" && i.status === "running") || (i.kind === "call" && (i.status === "pending" || i.status === "running")),
   );
   const thinking = streaming && !turn.answer && !busyItem;
+  const seenBefore = discoverSeenBefore(turn.items);
   const mandateError = turn.error && (MANDATE_ERROR_CODES.includes(turn.error.code) || turn.error.code === "forbidden");
   return (
     <section aria-label="Assistant turn" className="space-y-4">
@@ -378,8 +389,8 @@ export function TurnView({ turn, onReauthorise }: TurnViewProps) {
         <div className="relative">
           <div aria-hidden className="absolute bottom-4 left-[15px] top-4 w-px bg-border" />
           <ol className="relative">
-            {turn.items.map((item) => (
-              <ItemNode key={item.key} item={item} />
+            {turn.items.map((item, i) => (
+              <ItemNode key={item.key} item={item} seenBefore={seenBefore[i]} />
             ))}
             {thinking ? (
               <Node icon={<Sparkles />} tone="primary" pulse>

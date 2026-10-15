@@ -507,3 +507,21 @@ function findLastIndex<T>(items: T[], pred: (item: T) => boolean): number {
   for (let i = items.length - 1; i >= 0; i -= 1) if (pred(items[i])) return i;
   return -1;
 }
+
+/**
+ * For each timeline item, the agent slugs that earlier discover items of the same turn already
+ * showed, so a repeated directory search only renders agents that are new.
+ */
+export function discoverSeenBefore(items: readonly TimelineItem[]): ReadonlySet<string>[] {
+  const seen = new Set<string>();
+  return items.map((item) => {
+    const before = new Set(seen);
+    if (item.kind === "discover") for (const a of item.agents) seen.add(a.slug);
+    return before;
+  });
+}
+
+/** A clipped preview ends in one ellipsis: "from Brazil.…" and "Pleas……" become "from Brazil…" / "Pleas…". */
+export function tidyPreview(text: string): string {
+  return text.replace(/[\s.,;:!?…]*(?:…|\.{3})$/, "…");
+}

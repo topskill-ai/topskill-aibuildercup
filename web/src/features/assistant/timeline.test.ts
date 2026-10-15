@@ -4,8 +4,10 @@ import {
   applyCounterEvent,
   assistantReducer,
   buildHistory,
+  discoverSeenBefore,
   initialAssistantState,
   summarizeTurn,
+  tidyPreview,
   type AssistantState,
   type CallItem,
   type DiscoverItem,
@@ -375,5 +377,29 @@ describe("buildHistory", () => {
     expect(out.length).toBeLessThanOrEqual(12);
     expect(out[0].role).toBe("user");
     expect(out[out.length - 1]).toEqual({ role: "user", text: "x".repeat(4000) });
+  });
+});
+
+describe("timeline display helpers", () => {
+  const agent = (slug: string) => ({ slug, name: slug, tagline: "", price_cents: 100, card_url: "" });
+  const discover = (key: string, slugs: string[]): DiscoverItem => ({
+    kind: "discover",
+    key,
+    toolId: null,
+    query: "q",
+    status: "done",
+    agents: slugs.map(agent),
+  } as unknown as DiscoverItem);
+
+  it("tracks agents shown by earlier discover cards of the turn", () => {
+    const seen = discoverSeenBefore([discover("d1", ["a", "b"]), discover("d2", ["b", "c"]), discover("d3", ["a"])]);
+    expect(seen.map((s) => [...s].sort())).toEqual([[], ["a", "b"], ["a", "b", "c"]]);
+  });
+
+  it("ends a clipped preview with a single ellipsis", () => {
+    expect(tidyPreview("I am from Brazil.…")).toBe("I am from Brazil…");
+    expect(tidyPreview("Pleas……")).toBe("Pleas…");
+    expect(tidyPreview("from Brazil....")).toBe("from Brazil…");
+    expect(tidyPreview("Plain sentence.")).toBe("Plain sentence.");
   });
 });
