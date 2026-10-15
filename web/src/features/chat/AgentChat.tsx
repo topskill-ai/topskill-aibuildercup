@@ -13,6 +13,8 @@ import { MessageList } from "./MessageList";
 import { Paywall } from "./Paywall";
 import { BillingHint, UnavailableState } from "./StateViews";
 import { useChat } from "./useChat";
+import { VoiceButton, VoicePanel } from "@/features/voice/VoicePanel";
+import { useVoice, useVoiceConfig } from "@/features/voice/useVoice";
 
 /**
  * Scroll the window to the bottom while new content streams in, unless the reader scrolled up.
@@ -52,6 +54,20 @@ export function AgentChat({ agent }: { agent: PublicAgent }) {
   const billing = useBillingStatus(agent.slug, signedIn);
   const status = signedIn ? billing.data : null;
   const [draft, setDraft] = useState("");
+  const voiceConfig = useVoiceConfig();
+  const voice = useVoice({
+    slug: agent.slug,
+    agentTitle: agent.title,
+    conversationId: chat.conversationId,
+    onRound: chat.adoptConversation,
+    onEnded: (cid) => {
+      if (cid) chat.adoptConversation(cid);
+    },
+    onPaywall: chat.openTopUp,
+    onStaleConversation: chat.newConversation,
+  });
+  const voiceOpen = voice.state.phase !== "idle";
+  const voiceAvailable = voiceConfig.data?.enabled === true;
 
   const lastMessage = chat.messages[chat.messages.length - 1];
   useStickToBottom(chat.messages.length, `${chat.messages.length}:${lastMessage?.text.length ?? 0}:${lastMessage?.tools.length ?? 0}`);
@@ -77,7 +93,7 @@ export function AgentChat({ agent }: { agent: PublicAgent }) {
               <Button
                 variant="ghost"
                 size="sm"
-                disabled={chat.streaming}
+                disabled={chat.streaming || voiceOpen}
                 onClick={chat.newConversation}
                 icon={<SquarePen aria-hidden className="h-3.5 w-3.5" />}
               >
@@ -94,7 +110,7 @@ export function AgentChat({ agent }: { agent: PublicAgent }) {
             <SkeletonText lines={4} />
           </div>
         ) : (
-          <ColdStart agent={agent} onStarter={(prompt) => void chat.send(prompt)} disabled={chat.streaming} />
+          <ColdStart agent={agent} onStarter={(prompt) => void chat.send(prompt)} disabled={chat.streaming || voiceOpen} />
         )}
       </div>
 
@@ -114,14 +130,24 @@ export function AgentChat({ agent }: { agent: PublicAgent }) {
           onTopUp={chat.openTopUp}
           className="mb-2"
         />
-        <Composer
-          placeholder={agent.input_placeholder || `Ask ${agent.title} anything`}
-          draft={draft}
-          onDraftChange={setDraft}
-          streaming={chat.streaming}
-          onSend={chat.send}
-          onStop={chat.stop}
-        />
+        {voiceOpen ? (
+          <VoicePanel voice={voice} agentTitle={agent.title} />
+        ) : (
+          <div className="flex min-w-0 items-end gap-2">
+            <Composer
+              className="flex-1"
+              placeholder={agent.input_placeholder || `Ask ${agent.title} anything`}
+              draft={draft}
+              onDraftChange={setDraft}
+              streaming={chat.streaming}
+              onSend={chat.send}
+              onStop={chat.stop}
+            />
+            {voiceAvailable ? (
+              <VoiceButton onClick={() => void voice.start()} disabled={chat.streaming || chat.restoring} />
+            ) : null}
+          </div>
+        )}
       </div>
 
       <Paywall

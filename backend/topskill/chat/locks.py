@@ -101,3 +101,34 @@ def request_abort(conversation_id: str, turn_id: str, *, uid: str, agent_id: str
         return False
     entry.event.set()
     return True
+
+
+def acquire_conversation(conversation_id: str, uid: str) -> None:
+    """Hold a conversation without a process-wide turn slot (a voice call, SPEC §18.1): the
+    per-conversation lock (409) and the per-account limit (429) of :func:`acquire_turn`, but not
+    ``MAX_CONCURRENT_TURNS`` (voice has its own cap, ``VOICE_MAX_SESSIONS``), so open calls never
+    starve text turns. Release with :func:`release_conversation`."""
+    if conversation_id in _busy_conversations:
+        raise ApiError(409, Codes.TURN_IN_PROGRESS, "A reply is still being written in this conversation.")
+    if _turns_by_uid.get(uid, 0) >= MAX_TURNS_PER_USER:
+        raise ApiError(
+            429,
+            Codes.RATE_LIMITED,
+            "You have too many replies being written at once. Please wait for one to finish.",
+            {"retry_after_s": 5},
+        )
+    _busy_conversations.add(conversation_id)
+    _turns_by_uid[uid] = _turns_by_uid.get(uid, 0) + 1
+    _uid_of_conversation[conversation_id] = uid
+
+
+def release_conversation(conversation_id: str) -> None:
+    if conversation_id in _busy_conversations:
+        _busy_conversations.discard(conversation_id)
+        uid = _uid_of_conversation.pop(conversation_id, None)
+        if uid is not None:
+            left = _turns_by_uid.get(uid, 0) - 1
+            if left > 0:
+                _turns_by_uid[uid] = left
+            else:
+                _turns_by_uid.pop(uid, None)

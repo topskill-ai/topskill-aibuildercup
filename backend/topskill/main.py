@@ -36,6 +36,7 @@ from topskill.meta_router import router as meta_router
 from topskill.records.router import router as records_router
 from topskill.skills.router import router as skills_router
 from topskill.users.router import router as users_router
+from topskill.voice.router import router as voice_router
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ ROUTERS: tuple[tuple[APIRouter, str, str], ...] = (
     (chat_router, "/api", "topskill.chat.router:router"),
     (mandate_router, "", "topskill.a2a.mandate_router:router"),
     (a2a_router, "", "topskill.a2a.router:router"),
+    (voice_router, "/api/public", "topskill.voice.router:router"),
 )
 
 
