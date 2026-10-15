@@ -63,7 +63,8 @@ def skill_to_wire(data: dict[str, Any], *, body_preview: str | None = None) -> d
         "description": data.get("description") or "",
         "body_chars": int(data.get("body_chars") or 0),
         "files": [SkillFile.model_validate(f).model_dump() for f in data.get("files") or []],
-        "created_at": iso_z(created) if isinstance(created, datetime) else None,
+        # TS ``Skill.created_at`` is a non-null string; a legacy doc without one reads as "now"
+        "created_at": iso_z(created if isinstance(created, datetime) else utcnow()),
     }
     if body_preview is not None:
         out["body_preview"] = body_preview

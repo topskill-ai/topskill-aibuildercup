@@ -204,7 +204,7 @@ class SkillOut(BaseModel):
     description: str
     body_chars: int
     files: list[SkillFileOut]
-    created_at: str | None
+    created_at: str
 
 
 class AgentStatsOut(BaseModel):

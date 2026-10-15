@@ -288,3 +288,16 @@ def test_urls() -> None:
     assert urls["public_page"].endswith("/a/visa-advisor")
     assert urls["a2a_card"].endswith("/a2a/visa-advisor/.well-known/agent-card.json")
     assert urls["a2a_endpoint"].endswith("/a2a/visa-advisor")
+
+
+def test_skill_wire_created_at_is_never_null() -> None:
+    from datetime import UTC, datetime
+
+    from topskill.agents.schemas import SkillOut
+    from topskill.skills.service import skill_to_wire
+
+    legacy = skill_to_wire({"id": "skl_1"})  # a doc written before created_at existed
+    assert isinstance(legacy["created_at"], str) and legacy["created_at"].endswith("Z")
+    SkillOut.model_validate(legacy)
+    stamped = skill_to_wire({"id": "skl_2", "created_at": datetime(2026, 10, 1, tzinfo=UTC)})
+    assert stamped["created_at"].startswith("2026-10-01T00:00:00")
