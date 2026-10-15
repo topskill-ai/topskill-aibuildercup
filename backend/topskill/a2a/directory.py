@@ -119,11 +119,26 @@ async def _candidates() -> list[AgentDoc]:
     return [a for a in agents if a.pricing.a2a_enabled]  # in memory (§5.3)
 
 
+def _title_key(agent: AgentDoc) -> str:
+    return " ".join(_TERM_RE.findall(agent.title.lower()))
+
+
+def dedupe_titles(agents: list[AgentDoc]) -> list[AgentDoc]:
+    """One agent per normalised title, the oldest (``agents`` are newest first): copies of a listed
+    agent (e.g. republished from the same sample skill) do not crowd the original out of a short list."""
+    oldest: dict[str, AgentDoc] = {}
+    for a in agents:
+        oldest[_title_key(a)] = a  # later = older wins
+    keep = {id(a) for a in oldest.values()}
+    return [a for a in agents if id(a) in keep]
+
+
 async def search(q: str | None, *, limit: int = TOP_N, fallback: bool = False) -> list[DirectoryAgent]:
     """Rank A2A-enabled agents for ``q``. Without ``q``: newest first. With ``q``: only agents that match
     at least one term, best first (ties keep recency); ``fallback=True`` returns the newest agents when
-    nothing matches (used by the Enterprise Assistant)."""
-    agents = await _candidates()
+    nothing matches (used by the Enterprise Assistant). Agents with the same title appear once (the
+    oldest)."""
+    agents = dedupe_titles(await _candidates())
     query_terms = terms(q or "")
     if not query_terms:
         return [to_directory_agent(a) for a in agents[:limit]]
