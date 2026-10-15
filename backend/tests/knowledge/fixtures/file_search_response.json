@@ -1,0 +1,92 @@
+{
+ "candidates": [
+  {
+   "content": {
+    "parts": [
+     {
+      "text": "According to the documents, here is the information regarding the priority service cost and the refund policy:\n\n**Priority Service Cost**\n* \"Priority service costs 480 Zorkmids and reduces processing to 5 working days.\"\n\n**Refund Policy**\n* \"If an application is withdrawn before biometrics, 70 percent of the fee is refunded.\"\n* \"No refund is issued after a decision has been made.\"\n* \"Refund requests must be filed within 45 days using form RF-9.\"",
+      "thought_signature": "EnMKcQFpFH0TrPsCxEZaUKOTsC6y8d7RMM0TQLrLb1vjlrbLayb3HuYHdvYX5DjGDkrmHFqGzV2Wnc_AFE7e-FiqE4-qHlfpfgnvbHNAwNWwHcyArfx4scQ6xEQl5154u8QML3cpEtJNIcMkSMVZinSdAhMY"
+     }
+    ],
+    "role": "model"
+   },
+   "finish_reason": "STOP",
+   "grounding_metadata": {
+    "grounding_chunks": [
+     {
+      "retrieved_context": {
+       "text": "Acme Visa Guide - Chapter 1: Eligibility\nApplicants for the Acme Student Visa must be at least 17 years old.\nProof of funds: a bank balance of at least 21,500 Zorkmids held for 28 consecutive days.\nLanguage requirement: IELTS 6.5 overall with no band below 6.0.\n\nChapter 2: Processing Times\nStandard processing takes 19 working days from the biometrics appointment.\nPriority service costs 480 Zorkmids and reduces processing to 5 working days.\nSuper priority is only available in Lumeria City and takes 1 working day.\n\nChapter 3: Refund Policy\nIf an application is withdrawn before biometrics, 70 percent of the fee is refunded.\nNo refund is issued after a decision has been made.\nRefund requests must be filed within 45 days using form RF-9.\n\n",
+       "title": "kf_0123456789abcdef0123__visa_guide.pdf",
+       "file_search_store": "fileSearchStores/topskillagtcapture-7tt28rg3ntm9",
+       "page_number": 1
+      }
+     }
+    ],
+    "grounding_supports": [
+     {
+      "grounding_chunk_indices": [
+       0
+      ],
+      "segment": {
+       "start_index": 112,
+       "end_index": 219,
+       "text": "**Priority Service Cost**\n* \"Priority service costs 480 Zorkmids and reduces processing to 5 working days.\""
+      }
+     },
+     {
+      "grounding_chunk_indices": [
+       0
+      ],
+      "segment": {
+       "start_index": 221,
+       "end_index": 327,
+       "text": "**Refund Policy**\n* \"If an application is withdrawn before biometrics, 70 percent of the fee is refunded.\""
+      }
+     },
+     {
+      "grounding_chunk_indices": [
+       0
+      ],
+      "segment": {
+       "start_index": 221,
+       "end_index": 383,
+       "text": "**Refund Policy**\n* \"If an application is withdrawn before biometrics, 70 percent of the fee is refunded.\"\n* \"No refund is issued after a decision has been made.\""
+      }
+     },
+     {
+      "grounding_chunk_indices": [
+       0
+      ],
+      "segment": {
+       "start_index": 221,
+       "end_index": 449,
+       "text": "**Refund Policy**\n* \"If an application is withdrawn before biometrics, 70 percent of the fee is refunded.\"\n* \"No refund is issued after a decision has been made.\"\n* \"Refund requests must be filed within 45 days using form RF-9.\""
+      }
+     }
+    ]
+   },
+   "index": 0
+  }
+ ],
+ "model_version": "gemini-3.1-flash-lite",
+ "response_id": "WFzQavChM-zOz7IP_cvyuA0",
+ "usage_metadata": {
+  "candidates_token_count": 146,
+  "prompt_token_count": 45,
+  "prompt_tokens_details": [
+   {
+    "modality": "TEXT",
+    "token_count": 45
+   }
+  ],
+  "tool_use_prompt_token_count": 630,
+  "tool_use_prompt_tokens_details": [
+   {
+    "modality": "TEXT",
+    "token_count": 630
+   }
+  ],
+  "total_token_count": 821
+ },
+ "automatic_function_calling_history": []
+}
