@@ -17,7 +17,6 @@ export function AgentCard({ agent }: { agent: PublicAgentCard }) {
         "group relative flex min-w-0 flex-col overflow-hidden rounded-card border border-border bg-surface",
         "transition-colors duration-150 ease-out hover:border-border-strong focus-visible:outline-offset-2",
       )}
-      aria-label={`${agent.title} — ${agent.tagline || "Open agent"}`}
     >
       <span aria-hidden className={cn("h-1.5 w-full", accent.solid)} />
       <div className="flex min-w-0 flex-1 flex-col p-5">

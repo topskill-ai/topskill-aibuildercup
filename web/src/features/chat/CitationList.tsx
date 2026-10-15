@@ -1,4 +1,5 @@
 import { ExternalLink, FileText, Globe, Search } from "lucide-react";
+import { useState } from "react";
 import type { Citation } from "@/api/types";
 import { citationLabel } from "@/components/Markdown";
 import { Tooltip } from "@/components/ui/Tooltip";
@@ -42,21 +43,33 @@ export function CitationList({
   highlighted?: number | null;
   className?: string;
 }) {
+  // Knowledge snippets are a disclosure (tap on phones, where hover/focus tooltips never show).
+  const [openN, setOpenN] = useState<number | null>(null);
+  const snippetId = `${citationDomId(messageId, 0)}-snippet`;
   const knowledge = citations.filter((c) => c.kind === "knowledge");
   const web = citations.filter((c) => c.kind === "web");
   if (knowledge.length === 0 && web.length === 0) return null;
+  const opened = knowledge.find((c) => c.n === openN && c.snippet) ?? null;
   return (
     <div className={cn("min-w-0", className)} data-testid="citations">
       <div className="mb-1.5 text-xs font-semibold tracking-wide text-subtle uppercase">Sources</div>
       <ul className="flex flex-wrap gap-1.5">
         {knowledge.map((c) => {
           const label = citationLabel(c);
+          const isOpen = opened?.n === c.n;
           const button = (
             <button
               type="button"
               id={citationDomId(messageId, c.n)}
-              className={cn(chip, highlighted === c.n && "border-primary ring-2 ring-primary/20")}
+              className={cn(
+                chip,
+                (highlighted === c.n || isOpen) && "border-primary ring-2 ring-primary/20",
+                !c.snippet && "cursor-default",
+              )}
               aria-label={`Source ${c.n}: ${label}`}
+              aria-expanded={c.snippet ? isOpen : undefined}
+              aria-controls={c.snippet && isOpen ? snippetId : undefined}
+              onClick={c.snippet ? () => setOpenN((n) => (n === c.n ? null : c.n)) : undefined}
             >
               <Num n={c.n} />
               <FileText aria-hidden className="h-3.5 w-3.5 shrink-0 text-subtle" />
@@ -108,6 +121,18 @@ export function CitationList({
           );
         })}
       </ul>
+      {opened ? (
+        <blockquote
+          id={snippetId}
+          className="mt-2 rounded-control border-l-2 border-primary bg-slate-50 px-3 py-2 text-[13px] leading-5 text-muted"
+          data-testid="citation-snippet"
+        >
+          <span className="mb-0.5 block text-xs font-medium text-subtle">
+            [{opened.n}] {citationLabel(opened)}
+          </span>
+          {opened.snippet}
+        </blockquote>
+      ) : null}
     </div>
   );
 }

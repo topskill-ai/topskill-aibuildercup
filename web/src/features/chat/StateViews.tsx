@@ -4,37 +4,59 @@ import { Link } from "react-router";
 import { errorTraceId } from "@/api/errors";
 import type { BillingStatus } from "@/api/types";
 import { buttonClasses } from "@/components/ui/Button";
+import { ErrorLine } from "@/components/ui/ErrorLine";
 import { cn } from "@/lib/cn";
 import { billingHint, type PublicPricing } from "./billingHint";
 
 export function BillingHint({
   status,
   pricing,
+  signedIn = false,
+  loading = false,
+  error,
+  onRetry,
   onTopUp,
   className,
 }: {
   status: BillingStatus | null | undefined;
   pricing: PublicPricing;
+  signedIn?: boolean;
+  loading?: boolean;
+  /** Failure of `GET /billing` for a signed-in visitor: shown with its trace id. */
+  error?: unknown;
+  onRetry?: () => void;
   onTopUp: () => void;
   className?: string;
 }) {
-  const hint = billingHint(status, pricing);
+  const hint = billingHint(status, pricing, { signedIn, loading });
+  const failed = signedIn && !status && !loading && error != null;
   const Icon = hint.tone === "warning" ? Info : hint.tone === "success" ? CircleCheck : Coins;
   return (
-    <div
-      className={cn(
-        "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[13px]",
-        hint.tone === "warning" ? "text-warning" : "text-muted",
-        className,
-      )}
-      data-testid="billing-hint"
-    >
-      <Icon aria-hidden className={cn("h-3.5 w-3.5 shrink-0", hint.tone === "success" && "text-success")} />
-      <span className="min-w-0">{hint.text}</span>
-      {hint.topUp ? (
-        <button type="button" onClick={onTopUp} className="font-medium text-primary hover:underline">
-          Top up
-        </button>
+    <div className={className}>
+      <div
+        className={cn(
+          "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[13px]",
+          hint.tone === "warning" ? "text-warning" : "text-muted",
+          loading && signedIn && !status && "animate-pulse",
+        )}
+        data-testid="billing-hint"
+        aria-busy={(loading && signedIn && !status) || undefined}
+      >
+        <Icon aria-hidden className={cn("h-3.5 w-3.5 shrink-0", hint.tone === "success" && "text-success")} />
+        <span className="min-w-0">{hint.text}</span>
+        {hint.topUp ? (
+          <button type="button" onClick={onTopUp} className="font-medium text-primary hover:underline">
+            Top up
+          </button>
+        ) : null}
+      </div>
+      {failed ? (
+        <ErrorLine
+          className="mt-1 text-[13px]"
+          error={error}
+          message="Couldn't load your balance for this agent."
+          onRetry={onRetry}
+        />
       ) : null}
     </div>
   );

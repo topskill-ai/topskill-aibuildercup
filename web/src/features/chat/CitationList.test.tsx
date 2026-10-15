@@ -39,9 +39,31 @@ describe("CitationList", () => {
     expect(link).toHaveAttribute("target", "_blank");
     expect(link.getAttribute("rel")).toContain("noopener");
 
-    // The snippet appears on focus / tap.
-    await userEvent.click(screen.getByRole("button", { name: /Source 1/ }));
+    // Desktop: the snippet appears on hover.
+    const chip = screen.getByRole("button", { name: /Source 1/ });
+    await userEvent.hover(chip);
     expect(screen.getByRole("tooltip")).toHaveTextContent("Work visas require a sponsor.");
+    await userEvent.unhover(chip);
+  });
+
+  it("toggles the knowledge snippet inline on tap (phones never show hover tooltips)", async () => {
+    render(<CitationList messageId="m1" citations={[knowledge, range, web]} />);
+    const chip = screen.getByRole("button", { name: /Source 1/ });
+    expect(chip).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByTestId("citation-snippet")).toBeNull();
+
+    await userEvent.click(chip);
+    expect(chip).toHaveAttribute("aria-expanded", "true");
+    const snippet = screen.getByTestId("citation-snippet");
+    expect(snippet).toBeVisible();
+    expect(snippet).toHaveTextContent("Work visas require a sponsor.");
+    expect(chip).toHaveAttribute("aria-controls", snippet.id);
+    expect(chip).toHaveFocus();
+
+    await userEvent.click(chip);
+    expect(screen.queryByTestId("citation-snippet")).toBeNull();
+    // A chip without a snippet is not a disclosure.
+    expect(screen.getByRole("button", { name: /Source 2/ })).not.toHaveAttribute("aria-expanded");
   });
 
   it("renders nothing without sources", () => {

@@ -21,14 +21,27 @@ export interface PublicPricing {
   free_rounds: number;
 }
 
-export function billingHint(status: BillingStatus | null | undefined, pricing: PublicPricing): BillingHintModel {
+export interface BillingHintOptions {
+  /** The visitor is signed in (status may still be loading or have failed). */
+  signedIn?: boolean;
+  /** The signed-in billing status is still loading. */
+  loading?: boolean;
+}
+
+export function billingHint(
+  status: BillingStatus | null | undefined,
+  pricing: PublicPricing,
+  { signedIn = false, loading = false }: BillingHintOptions = {},
+): BillingHintModel {
   if (!status) {
+    // Public pricing: signed out, or signed in while `GET /billing` loads or after it failed.
+    const suffix = !signedIn ? " · sign in to chat" : loading ? " · checking your balance…" : "";
     if (pricing.mode === "free" || pricing.price_cents <= 0) {
-      return { tone: "success", text: "Free to use · sign in to chat", topUp: false };
+      return { tone: "success", text: `Free to use${suffix}`, topUp: false };
     }
     const price = `${formatCredits(pricing.price_cents)} per round`;
     const free = pricing.free_rounds > 0 ? ` · first ${plural(pricing.free_rounds, "round")} free` : "";
-    return { tone: "neutral", text: `${price}${free} · sign in to chat`, topUp: false };
+    return { tone: "neutral", text: `${price}${free}${suffix}`, topUp: false };
   }
   if (status.is_owner) return { tone: "success", text: "You're the creator — free for you", topUp: false };
   if (status.billing_mode === "free" || status.price_cents <= 0) {

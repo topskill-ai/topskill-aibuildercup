@@ -4,7 +4,7 @@ import type { Citation } from "@/api/types";
 import { Markdown } from "@/components/Markdown";
 import { ErrorLine } from "@/components/ui/ErrorLine";
 import { cn } from "@/lib/cn";
-import { chargeLabel, type ChargeContext, type ViewMessage } from "./chatState";
+import { chargeLabel, completionAnnouncement, type ChargeContext, type ViewMessage } from "./chatState";
 import { CitationList, SearchEntryPoint } from "./CitationList";
 import { citationDomId } from "./display";
 import { ToolActivity } from "./ToolActivity";
@@ -73,15 +73,24 @@ function ModelMessage({ m, ctx }: { m: ViewMessage; ctx: ChargeContext }) {
   );
 }
 
-/** Transcript: user bubbles right, model answers full-width Markdown (SPEC §11.4). */
+/**
+ * Transcript: user bubbles right, model answers full-width Markdown (SPEC §11.4). The transcript
+ * itself is not a live region (it re-renders on every delta); a hidden status line announces
+ * when an answer is complete instead.
+ */
 export function MessageList({ messages, ctx }: { messages: ViewMessage[]; ctx: ChargeContext }) {
   return (
-    <ol className="space-y-6" aria-label="Conversation" aria-live="polite" aria-relevant="additions">
-      {messages.map((m) => (
-        <li key={`${m.turn_id}-${m.role}`} className="min-w-0">
-          {m.role === "user" ? <UserBubble m={m} /> : <ModelMessage m={m} ctx={ctx} />}
-        </li>
-      ))}
-    </ol>
+    <>
+      <ol className="space-y-6" aria-label="Conversation">
+        {messages.map((m) => (
+          <li key={`${m.turn_id}-${m.role}`} className="min-w-0">
+            {m.role === "user" ? <UserBubble m={m} /> : <ModelMessage m={m} ctx={ctx} />}
+          </li>
+        ))}
+      </ol>
+      <p role="status" className="sr-only" data-testid="chat-announcer">
+        {completionAnnouncement(messages, ctx)}
+      </p>
+    </>
   );
 }

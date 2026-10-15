@@ -111,8 +111,12 @@ export default function AgentPage() {
   const query = usePublicAgent(slug);
 
   if (query.isPending) return <AgentPageSkeleton />;
-  if (query.isError) {
-    const err = query.error;
+  const err = query.error;
+  // A failed background refetch (focus, network blip) keeps the page and its running chat; only
+  // definitive answers (offline, not found) or a first load without data take over the page.
+  const definitive = hasCode(err, ErrorCodes.agent_offline, ErrorCodes.agent_not_found, ErrorCodes.not_found);
+  const agent = query.data;
+  if (!agent || (query.isError && definitive)) {
     return (
       <PageBody>
         {hasCode(err, ErrorCodes.agent_offline) ? (
@@ -130,5 +134,5 @@ export default function AgentPage() {
       </PageBody>
     );
   }
-  return <AgentView key={slug} agent={query.data} />;
+  return <AgentView key={slug} agent={agent} />;
 }

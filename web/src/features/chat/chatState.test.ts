@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { BillingStatus, ChatMessage, ChatStreamEvent } from "@/api/types";
 import { billingHint } from "./billingHint";
-import { chargeLabel, chatReducer, initialChatState, type ChatState, type ViewMessage } from "./chatState";
+import {
+  chargeLabel,
+  chatReducer,
+  completionAnnouncement,
+  fromWire,
+  initialChatState,
+  toWire,
+  type ChatState,
+  type ViewMessage,
+} from "./chatState";
 import { toolSummary } from "./display";
 
 const T = "t_0123456789abcdef";
@@ -145,6 +154,42 @@ describe("chargeLabel", () => {
     expect(chargeLabel({ ...base, streaming: true }, ctx)).toBeNull();
     expect(chargeLabel({ ...base, role: "user" }, ctx)).toBeNull();
   });
+
+  it("keeps an owner round free for the creator through the session stash round trip", () => {
+    const owner: ViewMessage = { ...base, charge: { charged_cents: 0, free: true, round_index: null } };
+    const restored = fromWire(JSON.parse(JSON.stringify(toWire(owner))) as ChatMessage);
+    expect(restored.charge?.round_index).toBeNull();
+    expect(chargeLabel(restored, ctx)).toBe("Free for you (creator)");
+    expect(chargeLabel(restored, { pricingMode: "per_round", freeRounds: 0 })).toBe("Free for you (creator)");
+    // A stash written by an older build (round_index 0) still reads as the owner.
+    expect(chargeLabel({ ...base, charge: { charged_cents: 0, free: true, round_index: 0 } }, ctx)).toBe("Free for you (creator)");
+  });
+});
+
+describe("completionAnnouncement", () => {
+  const ctx = { pricingMode: "per_round" as const, freeRounds: 2 };
+  it("announces only turns that finished live, with their charge", () => {
+    const live = run([
+      { event: "text_delta", data: { delta: "Hi" } },
+      {
+        event: "done",
+        data: {
+          conversation_id: "cnv_1",
+          message_id: "m_1",
+          turn_id: T,
+          outcome: "ok",
+          usage: null,
+          billing: { charged_cents: 100, free: false, round_index: 3, free_rounds_left: 0, balance_cents: 900 },
+        },
+      },
+    ]);
+    expect(completionAnnouncement(live.messages, ctx)).toBe("Answer ready · Charged 1.00 · round 3 · balance 9.00");
+    expect(completionAnnouncement(run([]).messages, ctx)).toBe("");
+    const stopped = chatReducer(run([]), { type: "stopped", turnId: T });
+    expect(completionAnnouncement(stopped.messages, ctx)).toBe("Answer stopped · Not charged (stopped)");
+    const restored = chatReducer(initialChatState, { type: "reset", messages: live.messages.map(toWire) });
+    expect(completionAnnouncement(restored.messages, ctx)).toBe("");
+  });
 });
 
 describe("billingHint", () => {
@@ -174,6 +219,14 @@ describe("billingHint", () => {
     expect(broke).toEqual({ tone: "warning", text: "Not enough credits: need 1.00, you have 0.40", topUp: true });
     expect(billingHint(status({ free_rounds_left: 0, balance_cents: 9900 }), pricing).text).toBe("1.00 per round · balance 99.00");
     expect(billingHint(status({ billing_mode: "free", price_cents: 0 }), pricing).text).toBe("Free to use");
+  });
+
+  it("never asks a signed-in visitor to sign in while the status loads or after it failed", () => {
+    expect(billingHint(undefined, pricing, { signedIn: true, loading: true }).text).toBe(
+      "1.00 per round · first 2 rounds free · checking your balance…",
+    );
+    expect(billingHint(undefined, pricing, { signedIn: true }).text).toBe("1.00 per round · first 2 rounds free");
+    expect(billingHint(undefined, { mode: "free", price_cents: 0, free_rounds: 0 }, { signedIn: true }).text).toBe("Free to use");
   });
 });
 

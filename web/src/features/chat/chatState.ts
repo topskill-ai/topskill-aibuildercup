@@ -76,7 +76,11 @@ export function toWire(m: ViewMessage): ChatMessage {
     citations: m.citations,
     search_entry_point_html: m.search_entry_point_html,
     tools: m.tools,
-    charge: m.charge ? { charged_cents: m.charge.charged_cents, free: m.charge.free, round_index: m.charge.round_index ?? 0 } : null,
+    // Owner rounds keep `round_index: null` (SPEC §8.5); the §6.3 wire type says `number` but the
+    // backend sends null for them, so the stash must not invent a round 0.
+    charge: m.charge
+      ? { charged_cents: m.charge.charged_cents, free: m.charge.free, round_index: m.charge.round_index as number }
+      : null,
     created_at: m.created_at,
   };
 }
@@ -220,9 +224,22 @@ export function chargeLabel(m: ViewMessage, ctx: ChargeContext): string | null {
     const balance = m.balance_cents != null ? ` · balance ${formatCredits(m.balance_cents)}` : "";
     return `Charged ${formatCredits(c.charged_cents)}${round}${balance}`;
   }
-  if (c.round_index == null) return "Free for you (creator)";
+  // Visitor rounds are numbered from 1; null (or a legacy 0 from an older stash) is the owner.
+  if (c.round_index == null || c.round_index <= 0) return "Free for you (creator)";
   if (ctx.pricingMode === "free") return "Free";
   if (c.round_index <= ctx.freeRounds) return `Free round ${c.round_index} of ${ctx.freeRounds}`;
   return "Not charged";
 }
 
+/**
+ * What a screen reader hears when a live turn ends ("Answer ready · Charged 1.00 · round 3").
+ * Only turns streamed in this page view count (`streaming === false`; restored messages have no
+ * live fields), so restoring a transcript announces nothing.
+ */
+export function completionAnnouncement(messages: ViewMessage[], ctx: ChargeContext): string {
+  const last = messages[messages.length - 1];
+  if (!last || last.role !== "model" || last.streaming !== false) return "";
+  const head = last.status === "ok" ? "Answer ready" : last.status === "aborted" ? "Answer stopped" : "No answer";
+  const charge = chargeLabel(last, ctx);
+  return charge ? `${head} · ${charge}` : head;
+}
