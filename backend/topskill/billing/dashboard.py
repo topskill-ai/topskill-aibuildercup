@@ -2,7 +2,11 @@
 
 Every query here is backed by a §5.3 composite index or is single-field:
 - ledger ``uid`` (+ ``category``) (+ ``agent_id``) ordered by ``created_at`` DESC — the four ledger indexes;
-- ledger ``uid == X and category in [...]`` (+ ``created_at >=``) — the ``uid, category, created_at`` index;
+- ledger ``uid == X and category in [creator_income, a2a_income] order by created_at desc`` — the
+  ``uid, category, created_at`` index. The dashboard income figures are summed **in memory** over this one
+  streamed query (capped at ``MAX_DASHBOARD_INCOME_ROWS``): a Firestore SUM aggregation would need
+  ``amount_cents`` in a composite index, which §5.3 does not have (prod rejects it with FAILED_PRECONDITION;
+  the emulator does not), so this module never calls ``.sum(`` / ``.count(``;
 - ``agents where owner_uid == X order by created_at desc`` — the agents owner index (``deleted`` in memory);
 - ``agent_stats where owner_uid == X`` — single-field.
 """
@@ -28,6 +32,7 @@ from topskill.pagination import fetch_page
 
 RECENT_INCOME_LIMIT = 20
 MAX_DASHBOARD_AGENTS = 100
+MAX_DASHBOARD_INCOME_ROWS = 5000  # newest income rows summed in memory (ample for the demo)
 
 STATS_FIELDS = (
     "rounds",
@@ -149,25 +154,15 @@ async def ledger_page(
 # --------------------------------------------------------------------------- dashboard
 
 
-async def _sum_amount(query: AsyncQuery) -> int:
-    result = await query.sum("amount_cents", alias="total").get()
-    for row in result:
-        for agg in row:
-            if agg.alias == "total" and agg.value is not None:
-                return int(agg.value)
-    return 0
-
-
-def _income_query(uid: str, categories: list[str], since: datetime | None = None) -> AsyncQuery:
-    q = (
+def _income_query(uid: str) -> AsyncQuery:
+    """The creator's income rows, newest first (``uid, category, created_at`` index, §5.3)."""
+    return (
         get_db()
         .collection(Col.LEDGER)
         .where(filter=FieldFilter("uid", "==", uid))
-        .where(filter=FieldFilter("category", "in", categories))
+        .where(filter=FieldFilter("category", "in", list(money.INCOME_CATEGORIES)))
+        .order_by("created_at", direction=firestore.Query.DESCENDING)
     )
-    if since is not None:
-        q = q.where(filter=FieldFilter("created_at", ">=", since))
-    return q
 
 
 def avatar_url(avatar_id: str | None) -> str | None:
@@ -213,28 +208,49 @@ async def _owner_agents(uid: str) -> list[AgentDoc]:
     return [a for a in agents if not a.deleted]  # in memory (§5.3)
 
 
-async def dashboard(uid: str) -> dict[str, Any]:
-    """``Dashboard`` (§6.3). Today = the current UTC day; income figures are the creator's share."""
-    now = utcnow()
+async def _income_figures(uid: str, now: datetime) -> tuple[dict[str, int], list[DocumentSnapshot]]:
+    """Sum the creator's income **in memory** over one streamed query (no aggregation, see module doc).
+
+    Returns the cent totals and the newest ``RECENT_INCOME_LIMIT`` full snapshots for ``recent_income``.
+    """
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_ago = now - timedelta(days=7)
-    income = list(money.INCOME_CATEGORIES)
+    totals = {"visitor": 0, "a2a": 0, "today": 0, "7d": 0}
+    recent: list[DocumentSnapshot] = []
+    async for snap in _income_query(uid).limit(MAX_DASHBOARD_INCOME_ROWS).stream():
+        if len(recent) < RECENT_INCOME_LIMIT:
+            recent.append(snap)
+        data = snap.to_dict() or {}
+        amount = int(data.get("amount_cents") or 0)
+        category = data.get("category")
+        if category == money.CREATOR_INCOME:
+            totals["visitor"] += amount
+        elif category == money.A2A_INCOME:
+            totals["a2a"] += amount
+        else:  # pragma: no cover - the query only returns income categories
+            continue
+        created = data.get("created_at")
+        if isinstance(created, datetime):
+            if created >= today:
+                totals["today"] += amount
+            if created >= week_ago:
+                totals["7d"] += amount
+    return totals, recent
+
+
+async def dashboard(uid: str) -> dict[str, Any]:
+    """``Dashboard`` (§6.3). Today = the current UTC day; income figures are the creator's share."""
     balance = await get_or_open_wallet(uid)
-    visitor_income = await _sum_amount(_income_query(uid, [money.CREATOR_INCOME]))
-    a2a_income = await _sum_amount(_income_query(uid, [money.A2A_INCOME]))
-    earned_today = await _sum_amount(_income_query(uid, income, today))
-    earned_7d = await _sum_amount(_income_query(uid, income, week_ago))
+    totals, recent = await _income_figures(uid, utcnow())
     stats = await _owner_stats(uid)
     agents = await _owner_agents(uid)
-    recent_q = _income_query(uid, income).order_by("created_at", direction=firestore.Query.DESCENDING)
-    recent = [snap async for snap in recent_q.limit(RECENT_INCOME_LIMIT).stream()]
     return {
         "balance_cents": balance,
-        "earned_total_cents": visitor_income + a2a_income,
-        "earned_today_cents": earned_today,
-        "earned_7d_cents": earned_7d,
-        "visitor_income_cents": visitor_income,
-        "a2a_income_cents": a2a_income,
+        "earned_total_cents": totals["visitor"] + totals["a2a"],
+        "earned_today_cents": totals["today"],
+        "earned_7d_cents": totals["7d"],
+        "visitor_income_cents": totals["visitor"],
+        "a2a_income_cents": totals["a2a"],
         "paid_rounds": sum(int(s.get("paid_rounds") or 0) for s in stats.values()),
         "a2a_calls": sum(int(s.get("a2a_calls") or 0) for s in stats.values()),
         "agents": [agent_summary_wire(a, stats.get(a.id)) for a in agents],
