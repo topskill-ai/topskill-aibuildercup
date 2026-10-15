@@ -7,8 +7,9 @@
 #   deploy/scripts/deploy_web.sh --skip-build       # deploy the existing web/dist
 #
 # Production VITE_* values (SPEC 4.3) are exported here; process env wins over any web/.env* file,
-# so a local dev .env cannot leak into the production bundle. Set VITE_GOOGLE_SIGNIN=1 once the
-# Google provider is enabled in the Firebase console (owner decision D4).
+# so a local dev .env cannot leak into the production bundle. Google sign-in is on by default: the
+# owner enabled the Google provider in the Firebase console (owner decision D4); VITE_GOOGLE_SIGNIN=0
+# hides the button again.
 set -euo pipefail
 
 PROJECT="${PROJECT:-top-skill}"
@@ -36,7 +37,7 @@ export VITE_FIREBASE_PROJECT_ID="top-skill"
 export VITE_FIREBASE_APP_ID="${VITE_FIREBASE_APP_ID:-1:920441209758:web:3e9d36df86419f88748c8f}"
 export VITE_USE_AUTH_EMULATOR=0
 export VITE_DEV_AUTH=0
-export VITE_GOOGLE_SIGNIN="${VITE_GOOGLE_SIGNIN:-0}"
+export VITE_GOOGLE_SIGNIN="${VITE_GOOGLE_SIGNIN:-1}"
 VITE_APP_VERSION="$(git rev-parse --short HEAD)"
 export VITE_APP_VERSION
 
