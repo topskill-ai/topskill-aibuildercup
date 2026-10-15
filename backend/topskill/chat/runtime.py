@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -80,7 +81,7 @@ from topskill.events import (
     StatusData,
     StreamErrorData,
 )
-from topskill.gemini import error_status, is_retriable, thinking_config
+from topskill.gemini import RETRIABLE_STATUS_CODES, error_status, is_retriable, thinking_config
 
 log = logging.getLogger(__name__)
 
@@ -156,10 +157,45 @@ def _error_frame(code: str) -> Frame:
     )
 
 
-def _exception_code(exc: BaseException) -> str:
-    if isinstance(exc, LlmCallsLimitExceededError):
+# ADK 2.12 does not raise model/tool failures out of ``run_async``: its workflow node runner turns them
+# into an error ``Event`` (``error_code`` = the API status name such as "RESOURCE_EXHAUSTED", else the
+# exception class name; ``error_message`` = ``str(exc)``, which for google-genai starts with the HTTP code).
+_STATUS_NAMES: dict[str, int] = {
+    "RESOURCE_EXHAUSTED": 429,
+    "UNAVAILABLE": 503,
+    "INTERNAL": 500,
+    "DEADLINE_EXCEEDED": 504,
+    "NOT_FOUND": 404,
+}
+_LEADING_STATUS_RE = re.compile(r"^\s*(\d{3})\b")
+
+
+def failure_status(attempt: _Attempt) -> int | None:
+    """HTTP-ish status of the failure that ended an attempt (raised exception or ADK error event)."""
+    if attempt.exc is not None:
+        return error_status(attempt.exc)
+    state = attempt.state
+    if not state.error_code:
+        return None
+    match = _LEADING_STATUS_RE.match(state.error_message or "")
+    if match:
+        return int(match.group(1))
+    return _STATUS_NAMES.get(state.error_code)
+
+
+def attempt_retriable(attempt: _Attempt) -> bool:
+    """A failure the next fallback plan may retry (429/5xx/404), only if nothing was shown yet."""
+    if attempt.interrupted or attempt.timed_out or attempt.state.visible:
+        return False
+    if attempt.exc is not None:
+        return is_retriable(attempt.exc)
+    return failure_status(attempt) in RETRIABLE_STATUS_CODES
+
+
+def failure_code(attempt: _Attempt) -> str:
+    if isinstance(attempt.exc, LlmCallsLimitExceededError):
         return Codes.AGENT_RUN_FAILED
-    if error_status(exc) == 429:
+    if failure_status(attempt) == 429:
         return Codes.RATE_LIMITED
     return Codes.AGENT_RUN_FAILED
 
@@ -412,18 +448,12 @@ async def run_turn(ctx: TurnContext, emit: Emit) -> None:
             models = chat_models(ctx.version)
             for i, model_name in enumerate(models):
                 attempt = await _attempt(ctx, deps, prep, model_name, emit, deadline)
-                if (
-                    attempt.exc is not None
-                    and is_retriable(attempt.exc)
-                    and not attempt.state.visible
-                    and not attempt.interrupted
-                    and i + 1 < len(models)
-                ):
+                if i + 1 < len(models) and attempt_retriable(attempt):
                     log.warning(
                         "turn_model_fallback %s model=%s status=%s",
                         log_extra,
                         model_name,
-                        error_status(attempt.exc),
+                        failure_status(attempt),
                     )
                     continue
                 break
@@ -432,10 +462,10 @@ async def run_turn(ctx: TurnContext, emit: Emit) -> None:
                 turn_error = Codes.TURN_TIMEOUT
                 log.warning("turn_timeout %s", log_extra)
             elif attempt.exc is not None:
-                turn_error = _exception_code(attempt.exc)
+                turn_error = failure_code(attempt)
                 log.error("turn_run_failed %s error=%r", log_extra, attempt.exc, exc_info=attempt.exc)
             elif state.error_code:
-                turn_error = Codes.AGENT_RUN_FAILED
+                turn_error = failure_code(attempt)
                 log.error(
                     "turn_error_event %s error_code=%s error_message=%s",
                     log_extra,

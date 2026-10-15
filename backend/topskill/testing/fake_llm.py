@@ -5,8 +5,9 @@ A script is a flat list of :class:`FakeStep` built with the helpers below. Every
 
 * ``text(chunks)``      – streamed as one partial response per chunk; aggregated into the final response.
 * ``thought(text)``     – a thought part (must never reach the visitor).
-* ``call(name, args)``  – a function call. A response ends after a run of consecutive ``call`` steps,
-                          because ADK then runs the tools and calls the model again (next steps).
+* ``call(name, args)``  – a function call. A response ends after a call, because ADK then runs the tool
+                          and calls the model again (next steps); ``call(..., parallel=True)`` joins the
+                          previous call's response (parallel function calls).
 * ``grounding(...)``    – Google Search grounding metadata attached to the response.
 * ``usage(...)``        – token usage on the final response (a default is always attached).
 * ``pause(seconds)``    – sleep inside the response (lets tests abort/disconnect mid-stream).
@@ -14,6 +15,8 @@ A script is a flat list of :class:`FakeStep` built with the helpers below. Every
                           retriable). Ends the response.
 * ``error_event(code)`` – yield an ``LlmResponse`` with ``error_code`` set (e.g. ``"SAFETY"``). Ends it.
 * ``empty()``           – a final response without any text. Ends it.
+* ``end()``             – ends the current response (e.g. between a search sub-agent's answer and the
+                          main agent's answer, which share one fake model in bypass mode).
 
 When the script is exhausted, further model calls return an empty response.
 
@@ -35,7 +38,9 @@ from google.genai import errors as genai_errors
 from google.genai import types
 from pydantic import Field, PrivateAttr
 
-StepKind = Literal["text", "thought", "call", "grounding", "usage", "pause", "error", "error_event", "empty"]
+StepKind = Literal[
+    "text", "thought", "call", "grounding", "usage", "pause", "error", "error_event", "empty", "end"
+]
 
 DEFAULT_ANSWER = "This is a scripted answer from the fake model."
 DEFAULT_MODEL = "gemini-3.8-flash"
@@ -48,6 +53,7 @@ class FakeStep:
     name: str = ""
     args: dict[str, Any] = field(default_factory=dict)
     call_id: str | None = None
+    parallel: bool = False
     grounding: types.GroundingMetadata | None = None
     status: int = 0
     code: str = ""
@@ -65,8 +71,10 @@ def thought(value: str) -> FakeStep:
     return FakeStep("thought", chunks=(value,))
 
 
-def call(name: str, args: dict[str, Any] | None = None, *, call_id: str | None = None) -> FakeStep:
-    return FakeStep("call", name=name, args=dict(args or {}), call_id=call_id)
+def call(
+    name: str, args: dict[str, Any] | None = None, *, call_id: str | None = None, parallel: bool = False
+) -> FakeStep:
+    return FakeStep("call", name=name, args=dict(args or {}), call_id=call_id, parallel=parallel)
 
 
 def grounding(
@@ -115,6 +123,10 @@ def empty() -> FakeStep:
     return FakeStep("empty")
 
 
+def end() -> FakeStep:
+    return FakeStep("end")
+
+
 def api_error(status: int, message: str = "fake upstream error") -> genai_errors.APIError:
     body = {"error": {"code": status, "message": message, "status": "FAKE"}}
     if 400 <= status < 500:
@@ -149,11 +161,11 @@ class FakeLlm(BaseLlm):
             step = self.script[self._cursor]
             self._cursor += 1
             steps.append(step)
-            if step.kind in ("error", "error_event", "empty"):
+            if step.kind in ("error", "error_event", "empty", "end"):
                 break
             if step.kind == "call":
                 nxt = self.script[self._cursor] if self._cursor < len(self.script) else None
-                if nxt is None or nxt.kind != "call":
+                if nxt is None or nxt.kind != "call" or not nxt.parallel:
                     break
         return steps
 
