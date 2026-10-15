@@ -2,8 +2,9 @@
  * Markdown renderer for model answers (react-markdown + GFM; raw HTML is never rendered).
  *
  * Citation markers (SPEC §7.3): `[n]` in the text becomes a superscript button only when `n`
- * matches a knowledge citation of this answer; any other `[n]` stays plain text. Markers inside
- * links and code are left alone.
+ * matches a knowledge citation of this answer; any other `[n]` stays plain text. A grouped marker
+ * such as `[3, 4]` becomes one button per matching number. Markers inside links and code are left
+ * alone.
  */
 import { memo, useMemo, type ComponentPropsWithoutRef, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
@@ -18,7 +19,7 @@ interface MdNode {
   data?: { hName?: string; hProperties?: Record<string, unknown> };
 }
 
-const MARKER_RE = /\[(\d{1,3})\]/g;
+const MARKER_RE = /\[(\d{1,3}(?:\s*,\s*\d{1,3})*)\]/g;
 const TRAILING_PUNCT_RE = /^[.,;:!?)]+/;
 const SKIP_PARENTS = new Set(["link", "linkReference", "inlineCode", "code", "definition"]);
 
@@ -33,23 +34,23 @@ export function splitCitationText(value: string, valid: ReadonlySet<number>): Md
   const out: MdNode[] = [];
   let last = 0;
   for (const match of value.matchAll(MARKER_RE)) {
-    const n = Number(match[1]);
-    if (!valid.has(n)) continue;
+    const numbers = [...new Set(match[1].split(",").map((part) => Number(part.trim())))].filter((n) => valid.has(n));
+    if (numbers.length === 0) continue;
     const start = match.index ?? 0;
     if (start < last) continue; // already consumed as trailing punctuation
     const before = value.slice(last, start).replace(/\s+$/, "");
     if (before) out.push({ type: "text", value: before });
     const end = start + match[0].length;
     const punct = TRAILING_PUNCT_RE.exec(value.slice(end))?.[0] ?? "";
-    const ref: MdNode = {
+    const refs: MdNode[] = numbers.map((n) => ({
       type: "citationRef",
       data: { hName: "sup", hProperties: { dataCite: String(n) } },
       children: [{ type: "text", value: String(n) }],
-    };
+    }));
     out.push({
       type: "citationGroup",
       data: { hName: "span", hProperties: { className: ["whitespace-nowrap"] } },
-      children: punct ? [ref, { type: "text", value: punct }] : [ref],
+      children: punct ? [...refs, { type: "text", value: punct }] : refs,
     });
     last = end + punct.length;
   }
@@ -124,14 +125,14 @@ function MarkdownImpl({ text, citations, onCitationClick, streaming, className }
         if (!citation) return <sup {...props}>{children}</sup>;
         const label = citationLabel(citation);
         return (
-          <sup className="mx-[1px] align-super leading-none">
+          <sup className="ml-[2px] align-super leading-none">
             <button
               type="button"
               data-citation={n}
               title={label}
               aria-label={`Source ${n}: ${label}`}
               onClick={() => onCitationClick?.(citation)}
-              className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-chip bg-primary-soft px-1 font-mono text-[11px] font-medium text-primary hover:bg-indigo-100"
+              className="inline-flex h-4 min-w-4 items-center justify-center rounded-chip bg-primary-soft px-[3px] font-mono text-[10px] font-medium text-primary hover:bg-indigo-100"
             >
               {n}
             </button>

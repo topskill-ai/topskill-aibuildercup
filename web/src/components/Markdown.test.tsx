@@ -101,6 +101,26 @@ describe("helpers", () => {
     expect(parts[4].value).toBe(" end");
   });
 
+  it("splits a grouped marker into one chip per valid number", () => {
+    const parts = splitCitationText("Sworn translations [3, 4]. Police [9, 10] and [2,9]", new Set([2, 3, 4]));
+    expect(parts.map((p) => p.type)).toEqual(["text", "citationGroup", "text", "citationGroup"]);
+    expect(parts[1].children?.map((c) => c.type)).toEqual(["citationRef", "citationRef", "text"]);
+    expect(parts[1].children?.map((c) => c.data?.hProperties?.dataCite ?? c.value)).toEqual(["3", "4", "."]);
+    expect(parts[2].value).toBe(" Police [9, 10] and");
+    expect(parts[3].children?.map((c) => c.data?.hProperties?.dataCite)).toEqual(["2"]);
+  });
+
+  it("renders a grouped marker in a table cell as chips", () => {
+    render(
+      <Markdown
+        text={"| Doc | Note |\n|---|---|\n| Certified Translations | Sworn translations [3, 4]. |"}
+        citations={[knowledge(3), knowledge(4)]}
+      />,
+    );
+    expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(["3", "4"]);
+    expect(screen.queryByText(/\[3, 4\]/)).toBeNull();
+  });
+
   it("labels page ranges", () => {
     expect(citationLabel(knowledge(1, { page_start: 2, page_end: 4 }))).toBe("visa_guide.pdf · pp. 2–4");
     expect(citationLabel(knowledge(1, { page_start: null, page_end: null }))).toBe("visa_guide.pdf");
