@@ -7,6 +7,8 @@ import type { ChatMessage, FollowStatus, RecordRow, RecordSchema } from "@/api/t
 export interface RecordFilters {
   status?: "in_progress" | "completed" | "";
   follow_status?: FollowStatus | "";
+  /** Show PII values instead of "•••" (owner's own data). */
+  reveal_pii?: boolean;
 }
 
 export interface RecordPage {
@@ -23,7 +25,13 @@ const base = (agentId: string) => `/api/agents/${encodeURIComponent(agentId)}`;
 
 export function fetchRecords(agentId: string, filters: RecordFilters, cursor: string | null): Promise<RecordPage> {
   return api.get<RecordPage>(`${base(agentId)}/records`, {
-    query: { limit: 50, cursor, status: filters.status, follow_status: filters.follow_status },
+    query: {
+      limit: 50,
+      cursor,
+      status: filters.status,
+      follow_status: filters.follow_status,
+      reveal_pii: filters.reveal_pii ? 1 : undefined,
+    },
   });
 }
 
