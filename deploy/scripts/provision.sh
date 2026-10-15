@@ -204,8 +204,9 @@ fi
 log "IAM: analytics (runtime SA runs queries and writes only this dataset)"
 if confirm "Grant BigQuery jobUser (project) and dataEditor (dataset ${ANALYTICS_DATASET}) to ${RUNTIME_SA}?"; then
   bind_project "serviceAccount:${RUNTIME_SA}" roles/bigquery.jobUser
-  run bq add-iam-policy-binding --dataset --project_id "${PROJECT}" \
-    --member="serviceAccount:${RUNTIME_SA}" --role=roles/bigquery.dataEditor "${PROJECT}:${ANALYTICS_DATASET}"
+  # Dataset-level grant via DCL: `bq add-iam-policy-binding --dataset` needs allowlisting. GRANT is idempotent.
+  run bq query --project_id "${PROJECT}" --location "${REGION}" --use_legacy_sql=false --quiet \
+    "GRANT \`roles/bigquery.dataEditor\` ON SCHEMA \`${PROJECT}.${ANALYTICS_DATASET}\` TO \"serviceAccount:${RUNTIME_SA}\""
 fi
 
 log "Analytics sync schedule (Cloud Scheduler → POST /api/internal/analytics/sync, OIDC as ${SCHEDULER_SA})"
