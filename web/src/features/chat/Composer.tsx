@@ -1,5 +1,5 @@
 import { SendHorizontal, Square } from "lucide-react";
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useRef, useState, type Dispatch, type KeyboardEvent, type SetStateAction } from "react";
 import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Textarea";
 import { cn } from "@/lib/cn";
@@ -8,6 +8,9 @@ export const MAX_MESSAGE_CHARS = 8000;
 
 export interface ComposerProps {
   placeholder: string;
+  /** Draft text, owned by the parent so a paywall Resend can clear it. */
+  draft: string;
+  onDraftChange: Dispatch<SetStateAction<string>>;
   streaming: boolean;
   disabled?: boolean;
   /** Resolves true when the draft may be cleared. */
@@ -17,8 +20,16 @@ export interface ComposerProps {
 }
 
 /** Autosizing textarea: Enter sends, Shift+Enter adds a newline; Stop while streaming (SPEC §11.4). */
-export function Composer({ placeholder, streaming, disabled, onSend, onStop, className }: ComposerProps) {
-  const [draft, setDraft] = useState("");
+export function Composer({
+  placeholder,
+  draft,
+  onDraftChange,
+  streaming,
+  disabled,
+  onSend,
+  onStop,
+  className,
+}: ComposerProps) {
   const [sending, setSending] = useState(false);
   const ref = useRef<HTMLTextAreaElement | null>(null);
   const canSend = draft.trim().length > 0 && !streaming && !sending && !disabled;
@@ -26,11 +37,13 @@ export function Composer({ placeholder, streaming, disabled, onSend, onStop, cla
   const submit = async () => {
     if (!canSend) return;
     const text = draft;
-    setDraft("");
+    onDraftChange("");
     setSending(true);
     try {
+      // `onSend` resolves when the turn ends; a refused send (sign-in cancelled, paywall, error)
+      // puts the text back unless the visitor already typed something new.
       const accepted = await onSend(text);
-      if (!accepted) setDraft((current) => current || text);
+      if (!accepted) onDraftChange((current) => current || text);
     } finally {
       setSending(false);
       ref.current?.focus();
@@ -55,7 +68,7 @@ export function Composer({ placeholder, streaming, disabled, onSend, onStop, cla
       <Textarea
         ref={ref}
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => onDraftChange(e.target.value)}
         onKeyDown={onKeyDown}
         placeholder={placeholder}
         aria-label="Message"

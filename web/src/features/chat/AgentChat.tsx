@@ -1,5 +1,5 @@
 import { SquarePen } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ErrorCodes, hasCode } from "@/api/errors";
 import type { PublicAgent } from "@/api/types";
 import { Button } from "@/components/ui/Button";
@@ -42,6 +42,7 @@ export function AgentChat({ agent }: { agent: PublicAgent }) {
   const chat = useChat(agent.slug, agent);
   const billing = useBillingStatus(agent.slug, signedIn);
   const status = signedIn ? billing.data : null;
+  const [draft, setDraft] = useState("");
 
   const lastMessage = chat.messages[chat.messages.length - 1];
   useStickToBottom(`${chat.messages.length}:${lastMessage?.text.length ?? 0}:${lastMessage?.tools.length ?? 0}`);
@@ -94,9 +95,20 @@ export function AgentChat({ agent }: { agent: PublicAgent }) {
           "backdrop-blur supports-[backdrop-filter]:bg-bg/80 sm:mx-0 sm:rounded-card sm:border sm:bg-surface sm:px-4",
         )}
       >
-        <BillingHint status={status} pricing={agent.pricing} onTopUp={chat.openTopUp} className="mb-2" />
+        <BillingHint
+          status={status}
+          pricing={agent.pricing}
+          signedIn={signedIn}
+          loading={signedIn && billing.isPending}
+          error={signedIn ? billing.error : null}
+          onRetry={() => void billing.refetch()}
+          onTopUp={chat.openTopUp}
+          className="mb-2"
+        />
         <Composer
           placeholder={agent.input_placeholder || `Ask ${agent.title} anything`}
+          draft={draft}
+          onDraftChange={setDraft}
           streaming={chat.streaming}
           onSend={chat.send}
           onStop={chat.stop}
@@ -109,9 +121,14 @@ export function AgentChat({ agent }: { agent: PublicAgent }) {
         error={paywall?.error ?? null}
         pendingText={paywall?.text ?? null}
         billing={status}
+        billingUpdatedAt={billing.dataUpdatedAt}
         onResend={(text) => {
           chat.closeGate();
-          void chat.send(text);
+          // The blocked text is still in the composer; clear it once the resend is accepted.
+          setDraft((current) => (current.trim() === text.trim() ? "" : current));
+          void chat.send(text).then((accepted) => {
+            if (!accepted) setDraft((current) => current || text);
+          });
         }}
       />
     </div>

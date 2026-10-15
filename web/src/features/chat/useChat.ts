@@ -64,13 +64,21 @@ export function useChat(slug: string, agent: Pick<PublicAgent, "title">) {
   const cidRef = useRef<string | null>(null);
   const activeRef = useRef<ActiveTurn | null>(null);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  /** Bumped by "start over": pending reconciles of the previous conversation are dropped. */
+  const generation = useRef(0);
 
   const uid = auth.status === "signed_in" ? (auth.me?.uid ?? null) : null;
 
   // Restore (or reset) whenever the signed-in account changes. Adjusting state during render
   // keeps the first paint consistent (no flash of the cold-start screen before the stash).
   const [restoredFor, setRestoredFor] = useState<string | null>(null);
-  if (uid !== restoredFor && (uid !== null || auth.status === "signed_out")) {
+  if (uid !== null && restoredFor === null && (state.activeTurnId !== null || state.messages.length > 0)) {
+    // Signed in from the login dialog opened by `send`: the profile re-render can land after
+    // `ensureSignedIn` resolved and the turn started (or even finished). While signed out the
+    // transcript is always empty, so any message here belongs to that turn: keep it (it opened a
+    // new conversation) instead of restoring over it.
+    setRestoredFor(uid);
+  } else if (uid !== restoredFor && (uid !== null || auth.status === "signed_out")) {
     setRestoredFor(uid);
     const cid = uid ? readConversationId(slug) : null;
     const stash = uid && cid ? readTranscript(slug, cid, uid) : null;
@@ -93,6 +101,9 @@ export function useChat(slug: string, agent: Pick<PublicAgent, "title">) {
   );
 
   const startOver = useCallback(() => {
+    generation.current += 1;
+    for (const t of timers.current) clearTimeout(t);
+    timers.current = [];
     clearConversation(slug);
     setConversation(null);
     dispatch({ type: "reset", messages: [] });
@@ -128,13 +139,13 @@ export function useChat(slug: string, agent: Pick<PublicAgent, "title">) {
     writeTranscript(slug, conversationId, uid, state.messages.filter((m) => !m.streaming).map(toWire));
   }, [slug, uid, conversationId, state.messages, state.activeTurnId]);
 
-  useEffect(() => {
-    const pending = timers.current;
-    return () => {
-      for (const t of pending) clearTimeout(t);
+  useEffect(
+    () => () => {
+      for (const t of timers.current) clearTimeout(t);
       activeRef.current?.controller.abort();
-    };
-  }, []);
+    },
+    [],
+  );
 
   const refreshBilling = useCallback(() => {
     void qc.invalidateQueries({ queryKey: queryKeys.billing(slug) });
@@ -147,15 +158,18 @@ export function useChat(slug: string, agent: Pick<PublicAgent, "title">) {
    */
   const reconcile = useCallback(
     (turnId: string, statusCid: string | null) => {
+      const gen = generation.current;
+      const stale = () => activeRef.current !== null || generation.current !== gen;
       const attemptAt = (attempt: number) => {
         if (attempt >= RECONCILE_DELAYS_MS.length) return;
         const timer = setTimeout(() => {
-          if (activeRef.current) return;
+          timers.current = timers.current.filter((t) => t !== timer);
+          if (stale()) return;
           const cid = cidRef.current ?? statusCid;
           if (!cid) return;
           fetchConversation(slug, cid)
             .then((conv) => {
-              if (activeRef.current) return;
+              if (stale()) return;
               if (!conv.messages.some((m) => m.turn_id === turnId && m.role === "model")) {
                 attemptAt(attempt + 1);
                 return;
@@ -173,13 +187,16 @@ export function useChat(slug: string, agent: Pick<PublicAgent, "title">) {
     [slug, setConversation, refreshBilling],
   );
 
-  /** Maps a pre-stream failure to UI. Returns true when the text was taken over (paywall/unavailable). */
+  /**
+   * Maps a pre-stream failure to UI. Returns true when the draft may be cleared (the agent is
+   * unavailable). The paywall keeps the draft in the composer too, so closing it loses nothing.
+   */
   const handleSendError = useCallback(
     (err: unknown, text: string): boolean => {
       if (hasCode(err, ErrorCodes.visitor_insufficient_points)) {
         setGate({ kind: "paywall", error: err, text });
         refreshBilling();
-        return true;
+        return false;
       }
       if (hasCode(err, ErrorCodes.insufficient_points, ErrorCodes.agent_offline, ErrorCodes.agent_not_found)) {
         setGate({ kind: "unavailable", error: err });
@@ -208,8 +225,8 @@ export function useChat(slug: string, agent: Pick<PublicAgent, "title">) {
   );
 
   /**
-   * Send one message. Resolves true when the composer may clear (the turn started, or the text
-   * moved into the paywall for a later Resend); false keeps the draft.
+   * Send one message. Resolves true when the composer may clear (the turn started); false keeps
+   * the draft (not signed in, paywall, other errors).
    */
   const send = useCallback(
     async (raw: string): Promise<boolean> => {

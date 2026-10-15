@@ -1,4 +1,5 @@
 import { Coins, RotateCcw } from "lucide-react";
+import { useEffect } from "react";
 import { Link } from "react-router";
 import { useMeta } from "@/api/meta";
 import type { ApiError } from "@/api/errors";
@@ -24,6 +25,8 @@ export interface PaywallProps {
   /** The message waiting to be resent (null = top-up only). */
   pendingText: string | null;
   billing: BillingStatus | null | undefined;
+  /** `dataUpdatedAt` of the billing query: a refetch newer than the top-up wins. */
+  billingUpdatedAt?: number;
   onResend: (text: string) => void;
 }
 
@@ -31,11 +34,23 @@ export interface PaywallProps {
  * Paywall for 402 `visitor_insufficient_points` (SPEC §11.4): explains the shortfall, offers the
  * demo top-up (`meta.demo_topup_cents`, never hardcoded) and a Resend of the blocked message.
  */
-export function Paywall({ open, onClose, error, pendingText, billing, onResend }: PaywallProps) {
+export function Paywall({ open, onClose, error, pendingText, billing, billingUpdatedAt = 0, onResend }: PaywallProps) {
   const meta = useMeta();
   const topup = useDemoTopup();
+  const { reset } = topup;
+  // Each opening starts clean: a top-up from an earlier opening must not mask a newer balance.
+  useEffect(() => {
+    if (open) reset();
+  }, [open, reset]);
+  const close = () => {
+    reset();
+    onClose();
+  };
   const required = num(error?.detail, "required_cents") ?? billing?.next_round_charge_cents ?? billing?.price_cents ?? null;
-  const balance = topup.data?.wallet.balance_cents ?? billing?.balance_cents ?? num(error?.detail, "balance_cents");
+  // The top-up response is the freshest balance until the invalidated billing status refetches.
+  const topupBalance =
+    topup.data && topup.submittedAt >= billingUpdatedAt ? topup.data.wallet.balance_cents : null;
+  const balance = topupBalance ?? billing?.balance_cents ?? num(error?.detail, "balance_cents");
   const topupCents = meta.data?.demo_topup_cents ?? null;
   const canAfford = required != null && balance != null ? balance >= required : topup.isSuccess;
 
@@ -48,17 +63,14 @@ export function Paywall({ open, onClose, error, pendingText, billing, onResend }
     <Dialog
       open={open}
       onOpenChange={(o) => {
-        if (!o) {
-          topup.reset();
-          onClose();
-        }
+        if (!o) close();
       }}
       title={pendingText ? "Not enough credits for this round" : "Top up credits"}
       description="Credits are simulated for this demo. Add free demo credits to keep chatting."
       size="sm"
       footer={
         <>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={close}>
             Close
           </Button>
           {pendingText ? (
@@ -66,7 +78,7 @@ export function Paywall({ open, onClose, error, pendingText, billing, onResend }
               disabled={!canAfford}
               icon={<RotateCcw aria-hidden className="h-4 w-4" />}
               onClick={() => {
-                topup.reset();
+                reset();
                 onResend(pendingText);
               }}
             >
@@ -101,7 +113,7 @@ export function Paywall({ open, onClose, error, pendingText, billing, onResend }
         {topup.isError ? <ErrorLine error={topup.error} /> : null}
         <p className="text-center text-[13px] text-muted">
           or open your{" "}
-          <Link to="/wallet" className="font-medium text-primary hover:underline" onClick={onClose}>
+          <Link to="/wallet" className="font-medium text-primary hover:underline" onClick={close}>
             wallet
           </Link>
         </p>
