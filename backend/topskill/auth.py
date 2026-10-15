@@ -221,3 +221,43 @@ async def require_creator(user: CurrentUser = Depends(get_current_user)) -> Curr
     if not user.is_creator:
         raise ApiError(403, Codes.CREATOR_REQUIRED, "This requires a creator account.")
     return user
+
+
+async def authenticate_credentials(
+    *,
+    token: str | None,
+    dev_uid: str | None = None,
+    dev_role: Role | None = None,
+    dev_email: str | None = None,
+) -> CurrentUser:
+    """The user for credentials sent outside HTTP headers (the voice WebSocket's first frame, SPEC §18.1).
+
+    Same rules as :func:`get_current_user`: a Firebase ID token always wins; the dev identity is honoured
+    only while the dev auth bypass is active (never in prod); otherwise 401 ``unauthenticated``.
+    """
+    identity: _Identity | None = None
+    if token and token.strip():
+        identity = await _identity_from_bearer(token.strip())
+    elif dev_uid is not None and get_settings().dev_bypass_active:
+        uid = dev_uid.strip()
+        if not DEV_UID_RE.match(uid):
+            raise _unauthenticated("Invalid developer user id.")
+        if dev_role is not None and dev_role not in _ROLES:
+            raise _unauthenticated("Invalid developer role.")
+        email = (dev_email or "").strip() or f"{uid}@{DEV_EMAIL_DOMAIN}"
+        identity = _Identity(uid=uid, email=email, name=None, photo_url=None, dev_role=dev_role)
+    if identity is None:
+        raise _unauthenticated()
+    try:
+        user_doc = await ensure_user(
+            identity.uid,
+            email=identity.email,
+            name=identity.name,
+            photo_url=identity.photo_url,
+            role=identity.dev_role,
+            update_role=identity.dev_role is not None,
+        )
+    except gexc.GoogleAPICallError as exc:
+        log.error("user_profile_unavailable error=%s", exc)
+        raise ApiError(503, Codes.SERVICE_UNAVAILABLE, "The service is temporarily unavailable.") from exc
+    return to_current_user(user_doc)

@@ -293,6 +293,26 @@ export function useChat(slug: string, agent: Pick<PublicAgent, "title">) {
     a.controller.abort();
   }, [slug]);
 
+  /**
+   * Adopt a conversation written outside this hook (a voice call, SPEC §18.1): remember its id and
+   * reload the transcript from the server. Ignored while a text turn is streaming.
+   */
+  const adoptConversation = useCallback(
+    (cid: string) => {
+      if (activeRef.current) return;
+      const gen = generation.current;
+      setConversation(cid);
+      fetchConversation(slug, cid)
+        .then((conv) => {
+          if (activeRef.current || generation.current !== gen) return;
+          dispatch({ type: "reset", messages: conv.messages });
+        })
+        .catch(() => undefined);
+      refreshBilling();
+    },
+    [slug, setConversation, refreshBilling],
+  );
+
   const newConversation = useCallback(() => {
     if (activeRef.current) return;
     startOver();
@@ -310,6 +330,7 @@ export function useChat(slug: string, agent: Pick<PublicAgent, "title">) {
     send,
     stop,
     newConversation,
+    adoptConversation,
   };
 }
 

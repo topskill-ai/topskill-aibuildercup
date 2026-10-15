@@ -130,6 +130,20 @@ class Settings(BaseSettings):
     # ---- request limits
     max_request_bytes: int = Field(30 * 1024 * 1024, ge=1)
 
+    # ---- voice mode (P2, SPEC §18.1): Gemini Live over a browser WebSocket. Models probed on Vertex for
+    # project top-skill on 2026-10-15: gemini-live-2.5-flash answers on `global`;
+    # gemini-live-2.5-flash-native-audio only on `us-central1`.
+    voice_enabled: bool = True
+    voice_model: str = "gemini-live-2.5-flash"
+    voice_location: str = "global"
+    voice_model_fallback: str = "gemini-live-2.5-flash-native-audio"
+    voice_location_fallback: str = "us-central1"
+    voice_max_session_s: int = Field(600, ge=1)
+    voice_idle_timeout_s: int = Field(90, ge=1)
+    voice_auth_timeout_s: int = Field(10, ge=1)
+    voice_max_sessions: int = Field(20, ge=1)
+    voice_sessions_per_hour: int = Field(30, ge=0)
+
     _split_lists = field_validator("chat_model_allowlist", "cors_origins", mode="before")(_split_csv)
 
     @field_validator("public_api_base", "public_web_base")

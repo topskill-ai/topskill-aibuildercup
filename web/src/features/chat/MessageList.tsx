@@ -1,4 +1,4 @@
-import { CircleCheck, CircleSlash, Coins, WifiOff } from "lucide-react";
+import { CircleCheck, CircleSlash, Coins, Mic, WifiOff } from "lucide-react";
 import { useCallback, useState } from "react";
 import type { Citation } from "@/api/types";
 import { Markdown } from "@/components/Markdown";
@@ -10,9 +10,14 @@ import { citationDomId } from "./display";
 import { ToolActivity } from "./ToolActivity";
 
 function UserBubble({ m }: { m: ViewMessage }) {
+  // Voice rounds (SPEC §18.1) carry a `voice_` turn id; their text is the speech transcript.
+  const spoken = m.turn_id.startsWith("voice_");
   return (
     <div className="flex justify-end">
       <div className="max-w-[85%] min-w-0 rounded-card rounded-br-[4px] bg-primary px-4 py-2.5 text-[15px] whitespace-pre-wrap text-primary-fg [overflow-wrap:anywhere]">
+        {spoken ? (
+          <Mic aria-label="Spoken" className="mr-1.5 -mt-0.5 inline h-3.5 w-3.5 opacity-80" data-testid="voice-marker" />
+        ) : null}
         {m.text}
       </div>
     </div>

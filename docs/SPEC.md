@@ -2000,3 +2000,111 @@ Deliverables this round: this section, a "Scaling" section in `README.md`, and o
 - Contracts: all cross-package types in `domain.py`, `MessageDoc`/`ConversationDoc`/`message_to_wire`, `chat/deps.py` single injection point, SSE payload types in §6.3 mirrored by `events.py`, `ErrorCodes` extended, `/api/public/meta`, `tasks.spawn` (§3.1, §5.2, §6.2, §6.3, §14.2, §14.3).
 - Plan: walking skeleton by Oct 16 12:00, code freeze Oct 17 18:00 Asia/Shanghai, MUST/SHOULD re-tag with per-lane checklist, demo storyline adds a rejected A2A call and records the visitor beat on a pre-ingested agent, scale-out design (§1.2, §11.4, §12.4, §14.1, §16).
 - Minors: zip-bomb/symlink limits, `google_search_agent` tool naming, `RecordSchemaIn` accepts `fields: []`, single `build_instruction` signature, `save_record` schema probe + fallback tool, pytest session loop.
+
+---
+
+## 18. P2 features
+
+### 18.1 Voice mode (Gemini Live) [voice]
+
+A mic button on the visitor agent page (`/a/:slug`) opens a real-time, interruptible spoken conversation with the
+agent. Same persona, playbooks, knowledge and web grounding as the text chat; every answered voice round is billed
+exactly like a text round and saved in the same conversation, so the text transcript shows it.
+
+**Design.** Browser ⇄ backend WebSocket ⇄ Vertex AI Live API (`google-genai` `client.aio.live.connect`, ADC).
+Firebase Hosting does not proxy WebSockets, so the web connects to the Cloud Run URL (`VITE_API_BASE` with
+`http→ws`), like SSE. Code: `backend/topskill/voice/` (`protocol.py` wire types, `live.py` connector + config +
+tool bridge, `rounds.py` round model + message writer, `session.py` orchestration, `registry.py` one session per
+account, `router.py` endpoints) and `web/src/features/voice/` (`audio.ts` AudioWorklet capture + PCM player,
+`pcm.ts`, `voiceState.ts`, `useVoice.ts`, `VoicePanel.tsx`).
+
+**Live models (probed 2026-10-15, project top-skill).** `gemini-live-2.5-flash` answers on location `global`
+(primary); `gemini-live-2.5-flash-native-audio` answers only on `us-central1` (fallback). Every newer name tried
+(`gemini-3.1-flash-live-preview`, `gemini-live-3*`, `gemini-3.8-flash-live*`, …) is "publisher model not found" in
+`global`, `us-central1` and `asia-southeast1`. Both models accept a function tool together with built-in
+`google_search` in one session and return grounding metadata; output audio is `audio/pcm` 24 kHz; usage is reported
+per model turn. The session connects with the first plan that completes the setup handshake.
+
+**Session config.** `response_modalities=[AUDIO]`, system instruction = `chat.prompt.build_instruction(channel="web",
+record_section=None)` + a "Voice call" section (short spoken sentences, no Markdown/URLs, never read `[n]` aloud) +
+"Conversation so far" (the newest ≤ 8 000 chars of the conversation's history, text and voice). Tools: the text
+chat's ADK `FunctionTool`s run through `voice.live.ToolBridge` — `search_knowledge` (bound to the round's citation
+collector, so citations are stored with the answer) and the skill readers; built-in `google_search` when the agent
+has web search on (grounding chunks become web citations and "Searched the web" tool lines). Input and output audio
+transcription on; server-side voice activity detection with `START_OF_ACTIVITY_INTERRUPTS` (barge-in). No
+`save_record` tool in voice: after each counted round the records extraction fallback runs (as in chat).
+
+**Endpoints.**
+- `GET /api/public/voice/config` (public) → `{enabled, max_session_s, idle_timeout_s, input_sample_rate: 16000,
+  output_sample_rate: 24000}`. The web shows the mic only when `enabled` is true; any failure hides it.
+- `WS /api/public/agents/{slug}/voice` (user). Browser `Origin` must be in `CORS_ORIGINS`/`CORS_ORIGIN_REGEX`
+  (else closed with 4403 before accept); clients without `Origin` (scripts) pass.
+
+**Protocol.** Client → server: first frame JSON `{"type":"start","token":"<Firebase ID token>","conversation_id":
+null|"cnv_…"}` within `VOICE_AUTH_TIMEOUT_S` (dev/test only: `"dev": {"uid","role?","email?"}` instead of `token`,
+honoured only while the dev auth bypass is active); then binary PCM16 LE mono 16 kHz frames (≤ 64 KB, even length;
+the web sends 40 ms frames, silence while muted); `{"type":"stop"}` ends the call; `{"type":"ping"}` → `pong`.
+Server → client: binary PCM16 LE mono 24 kHz answer audio and JSON events:
+
+| type | fields | meaning |
+|---|---|---|
+| `ready` | `session_id, conversation_id, model, input_sample_rate, output_sample_rate, max_session_s, idle_timeout_s, next_round_charge_cents, balance_cents` | Live session open; start streaming audio |
+| `transcript` | `turn_id, role: user\|model, text` | caption delta (append) |
+| `tool` | `turn_id, tool: ToolLine` | tool line started/finished (same shape as chat) |
+| `interrupted` | `turn_id` | barge-in: drop queued playback now |
+| `round` | `turn_id, conversation_id, message_id, outcome: ok\|failed\|aborted, citations, billing: DoneBilling` | a round was persisted (and billed when `ok`) |
+| `error` | `code, message, trace_id, detail` | terminal; same envelope and codes as REST (§6.2) |
+| `closed` | `reason: client\|max_duration\|idle\|replaced\|error\|server, conversation_id (null when nothing was saved), rounds, duration_s` | last event; then the close frame (1000, or 4000 + HTTP status after an error, e.g. 4401, 4402, 4404, 4409, 4410, 4429, 4503) |
+
+**Rounds and billing.** A round = one visitor utterance and the answer to it. It ends with the `turn_complete` of a
+model turn that produced audio or a caption (a turn that only called a tool does not end it), or with a barge-in
+before that. Outcome = `chat.runtime.classify_outcome`: `aborted` when the visitor interrupted (or hung up) before
+the model finished generating; `failed` on a Live/tool error or an answer without caption text; else `ok`. An
+interruption after the model finished (audio still playing in the browser) does not change an `ok` round (§7.4).
+Each finished round is settled in order by `billing.settle_round` (T2) with `voice.rounds.round_writer`: messages
+`u_{request_id}`/`m_{request_id}` with `turn_id`/`request_id` prefixed `voice_` (the web marks these user bubbles with
+a mic), user text = input transcription (`"(spoken message)"` when empty), model text = output transcription,
+citations, tool lines, usage (summed per round; `model` = the Live model), charge. Free rounds are the same
+`usage/{agent}__{uid}` counter as text. A visitor utterance that got no answer is not saved. Gates: before the call
+the text chat's checks run (`get_public_agent` 404/410, `get_scoped_conversation` 404 `session_not_owned`,
+`conversation_limit_reached`, `preflight_round` 402 `visitor_insufficient_points` / `insufficient_points`) and the
+call is refused without reaching Gemini; after every `ok` round the next round is pre-flighted again and the
+conversation limit re-checked — on failure the call ends with that error (the web opens the top-up dialog on 402).
+
+**Limits.** `VOICE_MAX_SESSION_S` (600) and `VOICE_IDLE_TIMEOUT_S` (90, no caption/audio/tool activity) end the call
+gracefully: the mic stops being forwarded, the answer in progress may finish (≤ 20 s), then `closed`. One live
+session per account (`voice.registry`): a new call ends the previous one with `replaced`. Process-wide cap
+`VOICE_MAX_SESSIONS` (20) → 429 `rate_limited`; `VOICE_SESSIONS_PER_HOUR` (30) per account via `ratelimit.hit`
+(bucket `voice_session`). The call holds the conversation's turn lock (`chat.locks.acquire_turn`), so a text reply in
+the same conversation gets 409 `turn_in_progress` and vice versa, and counts toward `MAX_CONCURRENT_TURNS`. In-process
+state is correct on one instance; scale-out = a Firestore lease per account, like §16's turn locks.
+
+**Config** (`topskill.config.Settings`, prod values = code defaults): `VOICE_ENABLED=true`,
+`VOICE_MODEL=gemini-live-2.5-flash`, `VOICE_LOCATION=global`, `VOICE_MODEL_FALLBACK=gemini-live-2.5-flash-native-audio`,
+`VOICE_LOCATION_FALLBACK=us-central1`, `VOICE_MAX_SESSION_S=600`, `VOICE_IDLE_TIMEOUT_S=90`, `VOICE_AUTH_TIMEOUT_S=10`,
+`VOICE_MAX_SESSIONS=20`, `VOICE_SESSIONS_PER_HOUR=30`. Feature flag: `VOICE_ENABLED=false` hides the mic (config
+endpoint) and refuses sockets with 503; when Gemini Live is unreachable the call fails with 503
+`service_unavailable` ("keep chatting by text") and text chat is unaffected (fail-open for the page, fail-closed for
+billing: nothing is charged without a persisted answer).
+
+**IAM.** None new: Live runs on Vertex AI with the runtime SA's existing `roles/aiplatform.user` (project-wide, so
+the `us-central1` fallback is covered). Cloud Run already supports WebSockets on the service (request timeout 3600 s
+≥ max session). Locally, an HTTP proxy that answers `CONNECT` with HTTP/1.0 breaks `websockets`; use
+`WSS_PROXY=socks5h://…` with `uv run --with 'python-socks[asyncio]' …`.
+
+**Web.** Mic button beside the composer (only when `voice/config.enabled`). Start order: sign-in → microphone
+permission (`getUserMedia` with echo cancellation, noise suppression, AGC; denied → "Microphone access is blocked"
+with no socket opened; non-secure page → explained) → WebSocket → `start` → audio only after `ready`. Capture: one
+AudioContext; an AudioWorklet decimates to 16 kHz PCM16 40 ms frames. Playback: 24 kHz chunks scheduled back to back;
+`interrupted` stops every scheduled source at once. The call panel replaces the composer (works at 375 px): state
+(Connecting / Listening / Thinking / Speaking / Call ended / Call failed), timer against the limit, live captions of
+the last two rounds with tool lines and the charge of each round, mute, End call; errors show `trace_id` and "Try
+again". Each `round` reloads the conversation so the transcript (with citations) appears in the chat.
+
+**Tests.** `backend/tests/voice/` — scripted Live fake over an in-process ASGI WebSocket (rounds, tools, web
+grounding, barge-in mid-answer vs after the answer, hang-up, idle and max duration, 402 before and after a round,
+creator unavailable, conversation limit, auth/origin/first-frame/timeout, scoping, offline agent, text lock, replace,
+cap, model fallback, Live down, Live error mid-answer, records extraction); `test_live.py` (`-m live`) streams a
+`say`-generated question to real Gemini Live and asserts captions, audio and a settled, charged round;
+`backend/scripts/voice_e2e.py` is the same check against a running backend (dev or prod). Web:
+`web/src/features/voice/*.test.ts(x)`.
