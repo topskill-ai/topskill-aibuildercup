@@ -61,6 +61,8 @@ export function IdentityStep({
   onAvatarBusy: (busy: boolean) => void;
 }) {
   const [leadOpen, setLeadOpen] = useState(records.enabled);
+  // A lead-capture error must be visible, so the section opens itself while one is shown.
+  const leadExpanded = leadOpen || Boolean(errors.records);
   const set = (patch: Partial<IdentityForm>) => onIdentity({ ...identity, ...patch });
 
   return (
@@ -183,8 +185,8 @@ export function IdentityStep({
       <div className="rounded-card border border-border">
         <button
           type="button"
-          aria-expanded={leadOpen}
-          onClick={() => setLeadOpen((o) => !o)}
+          aria-expanded={leadExpanded}
+          onClick={() => setLeadOpen(!leadExpanded)}
           className="flex w-full items-center gap-3 px-4 py-3 text-left"
         >
           <ClipboardList aria-hidden className="h-4 w-4 text-primary" />
@@ -196,9 +198,9 @@ export function IdentityStep({
                 : "Off. Turn on to collect structured details from visitors."}
             </span>
           </span>
-          <ChevronDown aria-hidden className={cn("h-4 w-4 text-subtle transition-transform", leadOpen ? "" : "-rotate-90")} />
+          <ChevronDown aria-hidden className={cn("h-4 w-4 text-subtle transition-transform", leadExpanded ? "" : "-rotate-90")} />
         </button>
-        {leadOpen ? (
+        {leadExpanded ? (
           <div className="space-y-4 border-t border-border p-4">
             <Switch
               checked={records.enabled}
@@ -208,7 +210,11 @@ export function IdentityStep({
             {records.enabled ? (
               <RecordFieldsEditor value={records.fields} onChange={(fields) => onRecords({ ...records, fields })} />
             ) : null}
-            {errors.records ? <p className="text-[13px] text-danger">{errors.records}</p> : null}
+            {errors.records ? (
+              <p className="text-[13px] text-danger" data-step-error tabIndex={-1}>
+                {errors.records}
+              </p>
+            ) : null}
           </div>
         ) : null}
       </div>

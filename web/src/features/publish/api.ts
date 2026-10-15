@@ -37,8 +37,8 @@ export function generateAvatar(prompt: string, accent: AccentColor): Promise<Ava
   return api.post<AvatarRef>("/api/avatars/generate", { prompt: prompt.slice(0, 600), accent_color: accent });
 }
 
-export function createAgent(body: CreateAgentRequest): Promise<Agent> {
-  return api.post<Agent>("/api/agents", body);
+export function createAgent(body: CreateAgentRequest, signal?: AbortSignal): Promise<Agent> {
+  return api.post<Agent>("/api/agents", body, { signal });
 }
 
 /**

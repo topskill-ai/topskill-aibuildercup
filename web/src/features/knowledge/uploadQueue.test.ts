@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/api/errors";
-import { progressLabel, progressOf, queueFromFiles, runUploads, type UploadItem } from "./uploadQueue";
+import { progressLabel, progressOf, queueFromFiles, runUploads, UPLOAD_STOPPED, type UploadItem } from "./uploadQueue";
 
 function file(name: string, size = 10): File {
   return new File([new Uint8Array(size)], name);
@@ -35,6 +35,28 @@ describe("knowledge upload queue", () => {
     expect(final[1].traceId).toBe("t-1");
     expect(snapshots.some((s) => s[0].state === "uploading")).toBe(true);
     expect(progressLabel(progressOf(final))).toBe("2 of 3 files uploaded, 1 failed");
+  });
+
+  it("stops sending files once the signal aborts", async () => {
+    const controller = new AbortController();
+    const calls: string[] = [];
+    const uploadOne = vi.fn(async (f: File) => {
+      calls.push(f.name);
+      if (f.name === "b.md") {
+        controller.abort();
+        throw new DOMException("aborted", "AbortError");
+      }
+    });
+    const final = await runUploads(
+      [file("a.pdf"), file("b.md"), file("c.txt"), file("d.csv")],
+      uploadOne,
+      () => {},
+      controller.signal,
+    );
+    expect(calls).toEqual(["a.pdf", "b.md"]);
+    expect(final.map((i) => i.state)).toEqual(["done", "failed", "failed", "failed"]);
+    expect(final.slice(1).every((i) => i.error === UPLOAD_STOPPED)).toBe(true);
+    expect(progressOf(final).running).toBe(false);
   });
 
   it("describes progress while running", () => {

@@ -61,20 +61,31 @@ export function progressLabel(p: UploadProgress): string {
   return `${p.done} of ${p.total} ${noun} uploaded, ${p.failed} failed`;
 }
 
+export const UPLOAD_STOPPED = "Upload stopped.";
+
 /**
  * Upload `files` one at a time with `uploadOne`, reporting every state change through `onChange`.
- * Never throws; failures are recorded per item (other files still upload). Returns the final items.
+ * Never throws; failures are recorded per item (other files still upload). Once `signal` aborts,
+ * the remaining files are marked as stopped and nothing more is sent. Returns the final items.
  */
 export async function runUploads(
   files: File[],
   uploadOne: (file: File) => Promise<unknown>,
   onChange: (items: UploadItem[]) => void,
+  signal?: AbortSignal,
 ): Promise<UploadItem[]> {
   let items = queueFromFiles(files);
   onChange(items);
   for (let i = 0; i < files.length; i += 1) {
     const item = items[i];
     if (item.state !== "queued") continue;
+    if (signal?.aborted) {
+      items = items.map((it) =>
+        it.state === "queued" || it.state === "uploading" ? { ...it, state: "failed", error: UPLOAD_STOPPED } : it,
+      );
+      onChange(items);
+      break;
+    }
     items = updateItem(items, item.id, { state: "uploading" });
     onChange(items);
     try {
@@ -83,7 +94,11 @@ export async function runUploads(
     } catch (err) {
       items = updateItem(items, item.id, {
         state: "failed",
-        error: isApiError(err) ? errorMessage(err) : `${files[i].name} could not be uploaded.`,
+        error: signal?.aborted
+          ? UPLOAD_STOPPED
+          : isApiError(err)
+            ? errorMessage(err)
+            : `${files[i].name} could not be uploaded.`,
         traceId: errorTraceId(err),
       });
     }

@@ -4,7 +4,7 @@
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, BookOpen, CheckCircle2, FilePlus2, Rocket, Timer, Trash2 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useBlocker, useNavigate } from "react-router";
 import { hasCode, ErrorCodes } from "@/api/errors";
 import { useMeta } from "@/api/meta";
@@ -57,6 +57,17 @@ import {
 import { useBeforeUnload, useNow } from "@/features/studio/hooks";
 
 type Phase = "editing" | "creating" | "uploading";
+
+/** Both ways a new draft can overwrite the creator's identity edits, confirmed with one dialog. */
+type PendingReplace = { kind: "redraft"; quality: DraftQuality } | { kind: "skill"; upload: SkillUpload };
+
+/** Moves the first invalid control (or step-level error) into view so a blocked Continue is never silent. */
+function revealFirstError() {
+  const el = document.querySelector<HTMLElement>('[aria-invalid="true"], [data-step-error]');
+  if (!el) return;
+  el.scrollIntoView({ block: "center", behavior: "smooth" });
+  el.focus({ preventScroll: true });
+}
 
 function Stepper({
   step,
@@ -128,9 +139,10 @@ export default function PublishWizardPage() {
   const [drafted, setDrafted] = useState<IdentityForm | null>(null);
   const [draftQuality, setDraftQuality] = useState<DraftQuality>("fast");
   const [draftFallback, setDraftFallback] = useState<unknown>(null);
-  const [confirmRedraft, setConfirmRedraft] = useState<DraftQuality | null>(null);
+  const [confirmReplace, setConfirmReplace] = useState<PendingReplace | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
+  const [errorPing, setErrorPing] = useState(0);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [finishedMs, setFinishedMs] = useState<number | null>(null);
   const [phase, setPhase] = useState<Phase>("editing");
@@ -143,8 +155,21 @@ export default function PublishWizardPage() {
   const elapsed = finishedMs ?? (startedAt !== null ? now - startedAt : 0);
   const busy = phase !== "editing";
   useBeforeUnload(busy);
-  // Keep the creator on the page while the agent is created and knowledge files upload.
+  // Keep the creator on the page while the agent is created and knowledge files upload. Leaving
+  // anyway aborts the publish run; its callbacks then neither toast nor navigate.
   const leaving = useRef(false);
+  const publishAbort = useRef<AbortController | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const stopped = () => !mounted.current || publishAbort.current?.signal.aborted === true;
+  useEffect(() => {
+    if (errorPing > 0) revealFirstError();
+  }, [errorPing]);
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       busy && !leaving.current && currentLocation.pathname !== nextLocation.pathname,
@@ -198,6 +223,11 @@ export default function PublishWizardPage() {
     },
   });
 
+  const startSkillUpload = (upload: SkillUpload) => {
+    if (startedAt === null) setStartedAt(Date.now());
+    skillUpload.mutate(upload);
+  };
+
   const onPick = (picked: PickedFile[]) => {
     const c = classifyDrop(picked);
     const found: string[] = [...c.problems];
@@ -210,10 +240,9 @@ export default function PublishWizardPage() {
     if (c.skill) {
       const p = skillProblem(c.skill);
       if (p) found.push(p);
-      else {
-        if (startedAt === null) setStartedAt(Date.now());
-        skillUpload.mutate(c.skill);
-      }
+      // A different skill starts a fresh draft, so edits to the identity are confirmed first.
+      else if (skill && identityEdited(form.identity, drafted)) setConfirmReplace({ kind: "skill", upload: c.skill });
+      else startSkillUpload(c.skill);
     }
     setProblems(found);
   };
@@ -236,11 +265,13 @@ export default function PublishWizardPage() {
 
   const publish = useMutation({
     mutationFn: async () => {
+      const controller = new AbortController();
+      publishAbort.current = controller;
       setPhase("creating");
-      const agent = await createAgent(buildCreateRequest(effective, ctx.skillIds));
-      return agent;
+      return createAgent(buildCreateRequest(effective, ctx.skillIds), controller.signal);
     },
     onSuccess: async (agent: Agent) => {
+      const signal = publishAbort.current?.signal;
       const took = startedAt !== null ? Date.now() - startedAt : 0;
       setFinishedMs(took);
       qc.setQueryData(queryKeys.agent(agent.id), agent);
@@ -249,11 +280,18 @@ export default function PublishWizardPage() {
       let failed = 0;
       if (knowledge.length > 0) {
         setPhase("uploading");
-        const final = await runUploads(knowledge, (f) => uploadKnowledgeFile(agent.id, f), setUploads);
+        const final = await runUploads(
+          knowledge,
+          (f) => uploadKnowledgeFile(agent.id, f, signal),
+          setUploads,
+          signal,
+        );
         failed = progressOf(final).failed;
         void qc.invalidateQueries({ queryKey: queryKeys.agent(agent.id) });
         void qc.invalidateQueries({ queryKey: queryKeys.knowledge(agent.id) });
       }
+      // The creator left mid-publish: do not pull them back or toast over the page they chose.
+      if (stopped()) return;
       toast.success(`Published in ${formatElapsed(took)}`, {
         description:
           failed > 0
@@ -267,6 +305,7 @@ export default function PublishWizardPage() {
       navigate(`/studio/agents/${agent.id}?tab=overview`, { replace: true });
     },
     onError: (err) => {
+      if (stopped()) return;
       setPhase("editing");
       if (hasCode(err, ErrorCodes.slug_taken, ErrorCodes.slug_invalid, ErrorCodes.slug_reserved, ErrorCodes.model_not_allowed))
         setStep("golive");
@@ -279,6 +318,7 @@ export default function PublishWizardPage() {
   const goNext = () => {
     if (Object.keys(errors).length > 0) {
       setShowErrors(true);
+      setErrorPing((n) => n + 1);
       return;
     }
     setShowErrors(false);
@@ -289,11 +329,16 @@ export default function PublishWizardPage() {
 
   const requestRedraft = (quality: DraftQuality) => {
     if (!skill) return;
-    if (identityEdited(form.identity, drafted)) setConfirmRedraft(quality);
+    if (identityEdited(form.identity, drafted)) setConfirmReplace({ kind: "redraft", quality });
     else startDraft(skill, quality);
   };
 
   const shownErrors = showErrors ? errors : {};
+  const errorSummary = showErrors ? Object.values(errors)[0] : undefined;
+  const leaveAnyway = () => {
+    publishAbort.current?.abort();
+    blocker.proceed?.();
+  };
   const isLast = step === "golive";
 
   return (
@@ -470,9 +515,7 @@ export default function PublishWizardPage() {
               Back
             </Button>
             <div className="flex min-w-0 items-center gap-3">
-              {showErrors && Object.keys(errors).length > 0 ? (
-                <span className="hidden text-[13px] text-danger sm:inline">{Object.values(errors)[0]}</span>
-              ) : null}
+              {errorSummary ? <span className="hidden text-[13px] text-danger sm:inline">{errorSummary}</span> : null}
               <Button
                 variant="primary"
                 size={isLast ? "lg" : "md"}
@@ -487,6 +530,12 @@ export default function PublishWizardPage() {
                 {!isLast ? <ArrowRight aria-hidden className="h-4 w-4" /> : null}
               </Button>
             </div>
+            {/* Phones: the summary wraps below the buttons instead of being hidden. */}
+            {errorSummary ? (
+              <p className="w-full text-right text-[13px] text-danger sm:hidden" role="alert">
+                {errorSummary}
+              </p>
+            ) : null}
           </div>
         ) : null}
       </Card>
@@ -494,15 +543,19 @@ export default function PublishWizardPage() {
       <Dialog
         open={blocker.state === "blocked"}
         onOpenChange={(o) => !o && blocker.reset?.()}
-        title="Uploads are still running"
-        description="Your agent is published, but leaving now stops the remaining knowledge uploads. You can add them later in the Knowledge tab."
+        title={phase === "uploading" ? "Uploads are still running" : "Publishing is in progress"}
+        description={
+          phase === "uploading"
+            ? "Your agent is published. Leaving now stops the remaining knowledge uploads; you can add them later in the Knowledge tab."
+            : `Your agent is still being created. If you leave now it may still go live${knowledge.length > 0 ? " without its knowledge files" : ""}, so check Studio before publishing again.`
+        }
         size="sm"
         footer={
           <>
             <Button variant="outline" onClick={() => blocker.reset?.()}>
               Stay
             </Button>
-            <Button variant="danger" onClick={() => blocker.proceed?.()}>
+            <Button variant="danger" onClick={leaveAnyway}>
               Leave anyway
             </Button>
           </>
@@ -510,24 +563,29 @@ export default function PublishWizardPage() {
       />
 
       <Dialog
-        open={confirmRedraft !== null}
-        onOpenChange={(o) => !o && setConfirmRedraft(null)}
+        open={confirmReplace !== null}
+        onOpenChange={(o) => !o && setConfirmReplace(null)}
         title="Replace your edits?"
-        description="A new draft overwrites the name, persona, greeting, questions, capabilities, pricing and lead capture."
+        description={
+          confirmReplace?.kind === "skill"
+            ? "The new skill gets a fresh draft that overwrites the name, persona, greeting, questions, capabilities, pricing and lead capture."
+            : "A new draft overwrites the name, persona, greeting, questions, capabilities, pricing and lead capture."
+        }
         size="sm"
         footer={
           <>
-            <Button variant="outline" onClick={() => setConfirmRedraft(null)}>
+            <Button variant="outline" onClick={() => setConfirmReplace(null)}>
               Keep my edits
             </Button>
             <Button
               onClick={() => {
-                const q = confirmRedraft;
-                setConfirmRedraft(null);
-                if (skill && q) startDraft(skill, q);
+                const pending = confirmReplace;
+                setConfirmReplace(null);
+                if (pending?.kind === "skill") startSkillUpload(pending.upload);
+                else if (skill && pending) startDraft(skill, pending.quality);
               }}
             >
-              Redraft
+              {confirmReplace?.kind === "skill" ? "Use the new skill" : "Redraft"}
             </Button>
           </>
         }
