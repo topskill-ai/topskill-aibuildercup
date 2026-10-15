@@ -19,6 +19,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from opentelemetry import trace as otel_trace
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 log = logging.getLogger(__name__)
@@ -151,6 +152,15 @@ def trace_id_from_header(value: str | None) -> str:
     return uuid.uuid4().hex
 
 
+def otel_trace_id() -> str | None:
+    """Trace id of the current OpenTelemetry span (32 hex), or ``None`` when no span is active (tracing
+    off). With tracing on, the FastAPI server span is already current when :class:`TraceIdMiddleware`
+    runs, and it continued the incoming ``traceparent`` / ``X-Cloud-Trace-Context`` trace, so the
+    envelope ``trace_id`` is the Cloud Trace id (SPEC §18.3)."""
+    ctx = otel_trace.get_current_span().get_span_context()
+    return format(ctx.trace_id, "032x") if ctx.is_valid else None
+
+
 def error_body(code: str, message: str, *, detail: dict | None = None, trace_id: str | None = None) -> dict:
     return {
         "code": code,
@@ -191,7 +201,7 @@ class TraceIdMiddleware:
         if scope["type"] not in ("http", "websocket"):
             await self.app(scope, receive, send)
             return
-        trace_id = trace_id_from_header(_scope_header(scope, b"x-cloud-trace-context"))
+        trace_id = otel_trace_id() or trace_id_from_header(_scope_header(scope, b"x-cloud-trace-context"))
         scope.setdefault("state", {})["trace_id"] = trace_id
         token = _trace_id.set(trace_id)
         started = False
@@ -317,6 +327,10 @@ class _TraceIdFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         if not getattr(record, "trace_id", None):
             record.trace_id = current_trace_id() or "-"
+        span_ctx = otel_trace.get_current_span().get_span_context()
+        if span_ctx.is_valid and format(span_ctx.trace_id, "032x") == record.trace_id:
+            record.span_id = format(span_ctx.span_id, "016x")
+            record.trace_sampled = bool(span_ctx.trace_flags.sampled)
         return True
 
 
@@ -338,6 +352,12 @@ class _JsonFormatter(logging.Formatter):
         if trace_id and trace_id != "-":
             payload["trace_id"] = trace_id
             payload["logging.googleapis.com/trace"] = f"projects/{self.project}/traces/{trace_id}"
+            span_id = getattr(record, "span_id", None)
+            if span_id:
+                payload["logging.googleapis.com/spanId"] = span_id
+                payload["logging.googleapis.com/trace_sampled"] = bool(
+                    getattr(record, "trace_sampled", False)
+                )
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
         return json.dumps(payload, ensure_ascii=False, default=str)

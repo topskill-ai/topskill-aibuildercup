@@ -40,6 +40,7 @@ os.environ.update(
         "CORS_ORIGIN_REGEX": r"^https://top-skill--[a-z0-9-]+\.web\.app$",
         "APP_VERSION": "test",
         "LOG_LEVEL": "INFO",
+        "TRACING_ENABLED": "false",
     }
 )
 os.environ.pop("K_SERVICE", None)

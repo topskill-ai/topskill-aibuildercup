@@ -17,6 +17,7 @@ from topskill import repo, tasks
 from topskill.auth import CurrentUser, get_current_user
 from topskill.domain import AgentDoc
 from topskill.errors import ApiError, Codes, current_trace_id
+from topskill.observability import note_a2a_call
 
 from . import _deps, assistant, directory
 from .cards import build_card, card_to_dict
@@ -210,6 +211,14 @@ async def a2a_rpc(slug: str, request: Request) -> Response:
             rpc_id, -32001, 503, Codes.SERVICE_UNAVAILABLE, "This agent is temporarily unavailable."
         )
     request.state.a2a_call_id = call_id
+    note_a2a_call(  # P2 §18.3: attributes for the executor's call span
+        agent_id=agent.id,
+        slug=slug,
+        call_id=call_id,
+        price_cents=price,
+        method=method,
+        payer_uid=mandate.payer_uid,
+    )
     setattr(request.state, DEADLINE_STATE_KEY, deadline)
     log.info("a2a_call_reserved slug=%s call_id=%s price_cents=%s method=%s", slug, call_id, price, method)
     try:

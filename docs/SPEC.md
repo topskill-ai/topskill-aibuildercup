@@ -2000,3 +2000,62 @@ Deliverables this round: this section, a "Scaling" section in `README.md`, and o
 - Contracts: all cross-package types in `domain.py`, `MessageDoc`/`ConversationDoc`/`message_to_wire`, `chat/deps.py` single injection point, SSE payload types in §6.3 mirrored by `events.py`, `ErrorCodes` extended, `/api/public/meta`, `tasks.spawn` (§3.1, §5.2, §6.2, §6.3, §14.2, §14.3).
 - Plan: walking skeleton by Oct 16 12:00, code freeze Oct 17 18:00 Asia/Shanghai, MUST/SHOULD re-tag with per-lane checklist, demo storyline adds a rejected A2A call and records the visitor beat on a pre-ingested agent, scale-out design (§1.2, §11.4, §12.4, §14.1, §16).
 - Minors: zip-bomb/symlink limits, `google_search_agent` tool naming, `RecordSchemaIn` accepts `fields: []`, single `build_instruction` signature, `save_record` schema probe + fallback tool, pytest session loop.
+
+---
+
+## 18. P2 features
+
+### 18.3 Observability: OpenTelemetry → Cloud Trace [trace]
+
+**Goal.** Every chat turn and every A2A call is one trace in Cloud Trace (project `top-skill`) that shows the HTTP request, our turn span with its business facts, ADK's agent / LLM / tool spans and the raw Gemini HTTP calls; the `trace_id` a user sees in an error toast (or an `X-Trace-Id` header, or a log line) opens that trace.
+
+**Design** (package `backend/topskill/observability/`):
+- `tracing.setup_tracing(app, settings)` (called at the end of `create_app()`) installs one global `TracerProvider` when `TRACING_ENABLED=true`: resource `service.name=topskill-api`, `service.version=APP_VERSION`, `gcp.project_id`, Cloud Run `faas.*`; `BatchSpanProcessor` → OTLP/HTTP (protobuf) exporter to **`https://telemetry.googleapis.com/v1/traces`** (Telemetry API) with ADC (`google.auth.default` + `AuthorizedSession`). Probe 2026-10-15: both this exporter and the deprecated `opentelemetry-exporter-gcp-trace` (Cloud Trace v2 `BatchWriteSpans`) wrote spans that were readable from the Cloud Trace v1 API; the OTLP exporter is used (recommended path, no gRPC proxy issue, same exporter ADK uses). The first span of a project provisions the `_Trace` observability bucket (≈1 minute; reads answer `404 _Trace bucket not found` until then).
+- Instrumentation: FastAPI server spans (`exclude_spans=["receive","send"]`, so an SSE stream is one span, not one per chunk; `RouteNameMiddleware` renames them to `METHOD /route/{template}` because FastAPI ≥ 0.141 wraps included routers and the stock instrumentation would name spans after the raw path) and httpx client spans (google-genai's Vertex calls, File Search calls, the Enterprise Assistant's A2A calls). Propagators: W3C `traceparent` + baggage + Google `X-Cloud-Trace-Context` (extract and inject), so a request continues Cloud Run's trace and the assistant → `/a2a/{slug}` hop stays in one trace.
+- ADK's built-in spans (`invocation`, `invoke_agent`, `call_llm`, `generate_content <model>`, `execute_tool <name>`) use the global provider and nest under our turn span. Their prompt/response content capture is **off** (`ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS=false` unless `TRACE_CAPTURE_CONTENT=true`): visitor text is PII and never goes into spans. a2a-sdk's own tracing decorators are off (`OTEL_INSTRUMENTATION_A2A_SDK_ENABLED=false`, set in `topskill/__init__.py` before `a2a` is imported): they emit ~60 spans per call and leak their context into ADK's run.
+- **Turn spans** (`turns.py`): `topskill.chat.turn` wraps the chat producer in `chat/runtime.start_turn` and derives its facts from the SSE frames it emits (no tracing code inside `run_turn`); `topskill.a2a.call` wraps `TopSkillA2aExecutor.execute`, reads the route's call facts (`note_a2a_call`), every ADK event (`_after_event`) and the settlement result (`settle_call`). Attributes:
+
+  | attribute | chat turn | A2A call |
+  |---|---|---|
+  | `topskill.channel` | `web` | `a2a` |
+  | `topskill.agent_id`, `topskill.slug` | ✓ (+ `agent_version`) | ✓ |
+  | ids | `conversation_id`, `request_id`, `turn_id`, `conversation_new` | `call_id`, `task_id`, `a2a_method`, `payer_uid`, `price_cents` |
+  | `topskill.model` / `gen_ai.response.model` | model that answered (`done.usage.model`) | `model_version` of the last event |
+  | `gen_ai.usage.input_tokens` / `output_tokens` | the turn's usage as stored on the message (last LLM call); per-call usage is on each `call_llm` span | same |
+  | `topskill.outcome` | `ok` / `failed` / `aborted` (= `done.outcome`) | `ok` / `failed` from the settlement |
+  | `topskill.charged_cents` | `done.billing.charged_cents` (0 when free / failed) | `A2ACharge.charged_cents` |
+  | `topskill.knowledge_searches` / `web_searches` / `tool_calls` | from `tool_start` frames (kind `search` / `web`) | `search_knowledge` calls / new `web_search_queries` |
+  | `topskill.ttft_ms` (+ span event `first_token`) | time to the first `text_delta` | time to the first model text event |
+  | `topskill.latency_ms`, `topskill.error_code` | ✓ | ✓ |
+
+  Span status is `ERROR` for `failed`, `OK` for `ok`, unset for `aborted`.
+- **Sampling** (`RouteSampler`, head sampling): turn routes (`/api/public/agents/{slug}/chat|voice|live`, `/a2a/{slug}`, `/api/demo/assistant/*`, any `*/voice` / `*/live`) at `TRACE_SAMPLE_RATIO_TURNS` (1.0); `/health`, `/healthz`, `/api/public/meta` and every `OPTIONS` preflight at `TRACE_SAMPLE_RATIO_HEALTH` (0.01); everything else (and background work without a request) at `TRACE_SAMPLE_RATIO` (1.0). A sampled remote parent is always honoured; an unsampled remote parent (Cloud Run's front end sends `o=0` on most requests) does not suppress our decision; local children follow their parent.
+- **Trace id alignment**: `errors.TraceIdMiddleware` now takes the trace id of the current OTel span when one exists (tracing on), else the old `X-Cloud-Trace-Context`/uuid4 rule. The OTel server span continued the incoming `traceparent`/`X-Cloud-Trace-Context`, so **the envelope `trace_id`, `X-Trace-Id`, SSE `error.trace_id`, JSON-RPC `error.data.trace_id`, our log lines and Cloud Run's request log all carry the same Cloud Trace id**. Unsampled requests still get a valid id (logs correlate; the trace itself is absent from Cloud Trace).
+- **Logs**: prod JSON log lines carry `trace_id`, `logging.googleapis.com/trace` = `projects/top-skill/traces/<id>` and, inside a span of that trace, `logging.googleapis.com/spanId` + `logging.googleapis.com/trace_sampled`, so Cloud Logging groups them under the request and the Trace explorer's "Logs" tab shows them per span.
+
+**Fail-open.** Tracing off (`TRACING_ENABLED=false`, the dev/test value) = no provider, the OTel API hands out non-recording spans, nothing else changes. ADC missing or exporter construction failing → one `tracing_disabled` warning, app runs untraced. Export failures (e.g. the IAM role not granted yet, Telemetry API down) never reach a request: the batch worker thread retries per the OTLP exporter, `FailOpenExporter` swallows errors and logs `trace_export_failed` at most every 5 minutes (the OTLP exporter's own error log is rate-limited the same way). Turn-span bookkeeping catches its own exceptions.
+
+**Config** (§4.1 additions; code defaults = prod):
+
+| Var | Dev / test | Prod = code default | Notes |
+|---|---|---|---|
+| `TRACING_ENABLED` | `false` | `true` | `deploy/env/prod.env.yaml` sets it explicitly |
+| `TRACE_OTLP_ENDPOINT` | – | `https://telemetry.googleapis.com/v1/traces` | |
+| `TRACE_SAMPLE_RATIO_TURNS` / `TRACE_SAMPLE_RATIO` / `TRACE_SAMPLE_RATIO_HEALTH` | `1.0` / `1.0` / `0.01` | same | 0.0–1.0 |
+| `TRACE_CAPTURE_CONTENT` | `false` | `false` | `true` puts prompts/answers into ADK spans (never in prod) |
+| `OTEL_INSTRUMENTATION_A2A_SDK_ENABLED` | `false` (code) | `false` (code) | env override possible |
+
+**IAM / APIs** (added to `deploy/scripts/provision.sh`, applied by the ship step): enable `telemetry.googleapis.com` and `cloudtrace.googleapis.com` (both already enabled in `top-skill` on 2026-10-15); grant **`roles/telemetry.tracesWriter`** on project `top-skill` to `topskill-api@top-skill.iam.gserviceaccount.com`. Viewers need `roles/cloudtrace.user` (owners have it). Without the grant prod keeps serving; spans are dropped with a rate-limited warning.
+
+**Endpoints / events.** None added; response header `X-Trace-Id` and every `trace_id` field keep their shape (32 lowercase hex).
+
+**Limits and cost.** Cloud Trace ingestion is free up to 2.5 M spans/month; a chat turn is ≈15–25 spans (server + turn + ADK + one httpx span per Gemini call), an A2A call ≈10, so demo traffic is far below the free tier. Export batches every 5 s (queue 2048 spans; overflow is dropped, never blocking). Span attributes never contain message text, mandate tokens or headers.
+
+**Verification (2026-10-15).** `tests/observability/` (unit: sampler, setup/fail-open, frame/event aggregation, log fields; emulator: chat turn + A2A call span trees, envelope trace id, `traceparent` continuation, health sampling; live: OTLP export read back through `GET https://cloudtrace.googleapis.com/v1/projects/top-skill/traces/{id}`). A dev run (emulators, real Gemini, `TRACING_ENABLED=true`) exported a 19-span chat turn (`topskill.chat.turn` with `knowledge_searches=1`, `web_searches=6`, `ttft_ms≈12200`, 4 `call_llm` spans) and an Enterprise Assistant run whose `call_agent` tool span contains the server-side `POST /a2a/{slug}` → `topskill.a2a.call` → ADK spans in the same trace.
+
+**Viewing a turn in the console (demo deck).**
+1. Take the trace id: the `X-Trace-Id` response header (DevTools → Network → the `chat` request), the small trace id under any error toast, or `trace_id` of a log line.
+2. Open `https://console.cloud.google.com/traces/list?project=top-skill&tid=<trace_id>` (Trace explorer), or Trace explorer → filter `Span name: topskill.chat.turn` (or `topskill.a2a.call`) and pick a row; add the attribute filter `topskill.slug: visa-advisor` to find one agent's turns.
+3. The waterfall shows `POST /api/public/agents/{slug}/chat` → `topskill.chat.turn` → `invoke_agent agent_<slug>` → `call_llm` / `execute_tool search_knowledge` / `execute_tool save_record` → `generate_content gemini-3.8-flash` → `POST` (Vertex). Select `topskill.chat.turn` to show the attributes table (charged, tokens, searches, ttft). For the A2A beat, open the assistant request's trace: each `execute_tool call_agent` contains the called agent's `POST /a2a/{slug}` → `topskill.a2a.call` (charged or not) and its ADK spans.
+4. "Logs" in the span details lists the log lines of that span (prod JSON logs carry `logging.googleapis.com/trace` and `spanId`).
+Programmatic read: `curl -H "Authorization: Bearer $(gcloud auth print-access-token)" https://cloudtrace.googleapis.com/v1/projects/top-skill/traces/<trace_id>`.

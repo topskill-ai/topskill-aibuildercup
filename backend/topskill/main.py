@@ -33,6 +33,8 @@ from topskill.errors import (
 from topskill.knowledge import sweep_stale_all
 from topskill.knowledge.router import router as knowledge_router
 from topskill.meta_router import router as meta_router
+from topskill.observability import force_flush as flush_traces
+from topskill.observability import setup_tracing
 from topskill.records.router import router as records_router
 from topskill.skills.router import router as skills_router
 from topskill.users.router import router as users_router
@@ -78,6 +80,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         await tasks.drain(timeout=8)
+        await asyncio.to_thread(flush_traces)  # export the last spans (the provider shuts down at exit)
 
 
 def create_app() -> FastAPI:
@@ -127,6 +130,7 @@ def create_app() -> FastAPI:
         app.include_router(router, prefix=prefix)
         mounted.append(name)
     app.state.mounted_routers = mounted
+    setup_tracing(app, settings)  # P2 §18.3: no-op when TRACING_ENABLED=false, fail-open otherwise
     return app
 
 

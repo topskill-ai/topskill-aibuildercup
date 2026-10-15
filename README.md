@@ -73,6 +73,7 @@ flowchart LR
 | Gemini File Search | One store per agent; our `search_knowledge` tool keeps page-level citations | `backend/topskill/knowledge/file_search.py`, `backend/topskill/knowledge/tool.py` |
 | Google Search grounding | Web sources and the search entry point shown under answers | `backend/topskill/chat/agent_factory.py`, `backend/topskill/chat/events.py` |
 | A2A v1.0 (+ v0.3 compat) | Agent Cards, JSON-RPC endpoint, Ed25519 JWS intent mandates | `backend/topskill/a2a/` |
+| Cloud Trace (OpenTelemetry, P2) | One trace per chat turn / A2A call: request, turn span (tokens, charge, searches, time to first token), ADK agent/LLM/tool spans, Gemini calls; the UI's `trace_id` opens it (SPEC §18.3) | `backend/topskill/observability/` |
 
 ## Scaling
 

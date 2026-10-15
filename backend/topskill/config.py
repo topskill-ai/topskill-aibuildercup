@@ -130,6 +130,14 @@ class Settings(BaseSettings):
     # ---- request limits
     max_request_bytes: int = Field(30 * 1024 * 1024, ge=1)
 
+    # ---- tracing (P2, SPEC §18.3): OpenTelemetry → Cloud Trace; tests and .env.example turn it off
+    tracing_enabled: bool = True
+    trace_otlp_endpoint: str = "https://telemetry.googleapis.com/v1/traces"
+    trace_sample_ratio_turns: float = Field(1.0, ge=0.0, le=1.0)  # chat / a2a / assistant / voice routes
+    trace_sample_ratio: float = Field(1.0, ge=0.0, le=1.0)  # every other route and background work
+    trace_sample_ratio_health: float = Field(0.01, ge=0.0, le=1.0)  # /health, /healthz, meta, OPTIONS
+    trace_capture_content: bool = False  # ADK prompt/response bodies in spans (visitor text = PII)
+
     _split_lists = field_validator("chat_model_allowlist", "cors_origins", mode="before")(_split_csv)
 
     @field_validator("public_api_base", "public_web_base")
