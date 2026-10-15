@@ -12,6 +12,7 @@ import httpx
 import pytest
 from a2a.client import A2AClientError, ClientCallContext, ClientConfig, create_client
 from a2a.types import Message, Part, Role, SendMessageRequest
+from google.cloud.firestore import FieldFilter
 from google.protobuf.json_format import MessageToDict
 
 from tests.a2a.conftest import A2AEnv, issue_mandate
@@ -86,7 +87,10 @@ async def _setup(client, *, price: int = 200, script=None, env: A2AEnv | None = 
 async def _no_running(mandate_id: str) -> None:
     calls = [
         s.to_dict()
-        async for s in get_db().collection(Col.A2A_CALLS).where("mandate_id", "==", mandate_id).stream()
+        async for s in get_db()
+        .collection(Col.A2A_CALLS)
+        .where(filter=FieldFilter("mandate_id", "==", mandate_id))
+        .stream()
     ]
     assert calls and all(c["status"] != "running" for c in calls), calls
     assert (await _doc(Col.MANDATES, mandate_id))["reserved_cents"] == 0

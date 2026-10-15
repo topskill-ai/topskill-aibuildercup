@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
+from google.cloud.firestore import FieldFilter
 
 from tests.a2a.conftest import A2AEnv, issue_mandate, parse_sse
 from tests.a2a.fakes import ScriptedLlm, call_response, function_responses, text_response
@@ -141,7 +142,10 @@ async def test_assistant_two_paid_calls_and_one_rejected(client, a2a_env: A2AEnv
     # no call ever ran for the contract reviewer, nothing is left running
     calls_docs = [
         s.to_dict()
-        async for s in get_db().collection(Col.A2A_CALLS).where("mandate_id", "==", mandate["id"]).stream()
+        async for s in get_db()
+        .collection(Col.A2A_CALLS)
+        .where(filter=FieldFilter("mandate_id", "==", mandate["id"]))
+        .stream()
     ]
     assert sorted(c["agent_slug"] for c in calls_docs) == sorted([visa.slug, resume.slug])
     assert all(c["status"] == "completed" for c in calls_docs)
