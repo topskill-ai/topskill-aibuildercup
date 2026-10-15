@@ -113,7 +113,8 @@ export function ColdStart({
         <p className="mt-4 text-[13px] leading-relaxed whitespace-pre-line text-muted">{agent.description}</p>
       ) : null}
       {capabilities.length > 0 ? (
-        <ul className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        // On wide screens the info panel next to the chat already lists the capabilities.
+        <ul className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:hidden">
           {capabilities.map((c, i) => (
             <li key={`${c.name}-${i}`} className="flex min-w-0 items-start gap-2.5 rounded-control border border-border p-3">
               <CapabilityIcon name={c.icon} className="mt-0.5 shrink-0 text-primary" />
