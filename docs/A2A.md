@@ -55,6 +55,6 @@ curl -s -X POST "$API/a2a/visa-advisor" \
 - The v1.0 JSON-RPC methods need the `A2A-Version: 1.0` header; without it the SDK treats the request as v0.3 and answers `-32009 VERSION_NOT_SUPPORTED` (not charged). v0.3 callers can use `message/send` with `{"kind":"text","text":…}` parts instead.
 - The mandate may also travel in `params.metadata.ap2_mandate`.
 - Only a `TASK_STATE_COMPLETED` call with a non-empty answer is charged (the agent's A2A price; 80% goes to the creator). `SendStreamingMessage` works the same way. `GetTask` reads your own tasks; `CancelTask` is rejected (`-32002`, HTTP 409) because a paid task cannot be cancelled once its answer has streamed.
-- Charged calls appear in `/wallet` (ledger, category A2A payment); every call, charged or not, is listed under the mandate (`GET /api/mandates/{id}/calls`).
+- Charged calls appear in `/wallet` (ledger, category A2A payment); every call that passed the mandate checks, completed or failed, is listed under the mandate (`GET /api/mandates/{id}/calls`); a call rejected with 402 before it ran leaves no record.
 
 In process, the Enterprise Assistant (`backend/topskill/a2a/assistant.py`) is such a caller: it uses the a2a-sdk client over real HTTP with `X-AP2-Mandate`.
