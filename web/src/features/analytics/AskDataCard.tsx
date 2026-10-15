@@ -135,7 +135,8 @@ export function AskDataCard({ className }: { className?: string }) {
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              // Not while an IME is composing: that Enter confirms a candidate, it does not send.
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 submit(question);
               }

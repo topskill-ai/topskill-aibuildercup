@@ -45,7 +45,8 @@ class SqlRejected(ValueError):
 
 
 # Words that never appear in a read-only query over our CTEs (compared case-insensitively against
-# unquoted identifiers/keywords; text inside string literals is not inspected).
+# unquoted identifiers/keywords; text inside string literals is not inspected). ``model`` is NOT listed: it
+# is a visible column, and ``MODEL x`` arguments only exist inside ``ML.*`` / ``AI.*`` / ``CREATE``.
 FORBIDDEN_WORDS: frozenset[str] = frozenset(
     {
         # DML / DDL / DCL
@@ -56,7 +57,7 @@ FORBIDDEN_WORDS: frozenset[str] = frozenset(
         "assert", "return", "raise", "loop", "while", "repeat", "procedure", "function", "temp",
         "temporary", "recursive",
         # table-valued / model / external access
-        "table", "model", "external_query", "information_schema", "ml", "ai", "obj", "vector_search",
+        "table", "external_query", "information_schema", "ml", "ai", "obj", "vector_search",
         "appends", "changes", "external_object_transform", "system_time", "session_user", "kms",
         "aead", "deterministic_encrypt", "deterministic_decrypt", "gap_fill",
     }
@@ -67,10 +68,22 @@ _NUMBER_RE = re.compile(r"(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?")
 _STRING_PREFIX_RE = re.compile(r"(?:[rR][bB]?|[bB][rR]?)?(?='|\")")
 
 
-def _forbidden_names(dataset: str, project: str) -> frozenset[str]:
-    names = {n.lower() for n in PHYSICAL_NAMES} | {dataset.lower()}
-    names |= {part.lower() for part in re.split(r"[^A-Za-z0-9_]+", project) if part}
-    return frozenset(names)
+def _forbidden_names(dataset: str) -> frozenset[str]:
+    return frozenset({n.lower() for n in PHYSICAL_NAMES} | {dataset.lower()})
+
+
+def _qualifies_with_project(tokens: list[Token], i: int, project_tokens: list[str]) -> bool:
+    """True when ``tokens[i:]`` spells the project id followed by ``.`` (e.g. ``top-skill.ds.t``).
+
+    The parts of the id alone (``top``, ``skill``) are ordinary aliases; only the full id used as a
+    qualifier is refused. Other projects/datasets are refused by the dry-run referenced-table check."""
+    n = len(project_tokens)
+    if not n or i + n >= len(tokens):
+        return False
+    if any(tokens[i + k].text.lower() != project_tokens[k] for k in range(n)):
+        return False
+    nxt = tokens[i + n]
+    return nxt.kind == "punct" and nxt.text == "."
 
 
 def _read_string(sql: str, i: int) -> int:
@@ -144,12 +157,18 @@ def check_sql(sql: str, *, dataset: str, project: str) -> str:
     if len(text) > MAX_SQL_CHARS:
         raise SqlRejected("too_long", "The query is too long.")
     tokens = tokenize(text)
-    forbidden_names = _forbidden_names(dataset, project)
+    forbidden_names = _forbidden_names(dataset)
+    try:
+        project_tokens = [t.text.lower() for t in tokenize(project)]
+    except SqlRejected:
+        project_tokens = []
     lead = next((t for t in tokens if t.text != "("), None)
     if lead is None or lead.kind != "ident" or lead.text.lower() not in ("select", "with"):
         raise SqlRejected("not_select", "Only SELECT queries are allowed.")
     depth = 0
-    for tok in tokens:
+    for i, tok in enumerate(tokens):
+        if _qualifies_with_project(tokens, i, project_tokens):
+            raise SqlRejected("table_reference", "Query only the provided tables, by their short names.")
         if tok.kind == "punct":
             if tok.text == ";":
                 raise SqlRejected("multiple_statements", "Only one statement is allowed.")

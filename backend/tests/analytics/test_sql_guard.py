@@ -45,6 +45,13 @@ def rejected(sql: str) -> str:
         "SELECT 1;",
         "SELECT 1 ;  ;\n",
         "SELECT ARRAY_LENGTH(filled_keys) AS n FROM records",
+        # ``model`` is a column; the project id's parts are ordinary names
+        "SELECT model, COUNT(*) AS n FROM rounds GROUP BY model",
+        "SELECT r.model FROM rounds AS r",
+        "WITH top AS (SELECT 1 AS n) SELECT * FROM top",
+        "WITH top AS (SELECT 1 AS n) SELECT top.n FROM top",
+        "SELECT title AS skill FROM agents",
+        "SELECT top - skill AS d FROM (SELECT 2 AS top, 1 AS skill)",
     ],
 )
 def test_accepts_plain_selects(sql: str) -> None:
@@ -79,6 +86,8 @@ def test_accepts_plain_selects(sql: str) -> None:
         ("SELECT * FROM topskill_analytics_dev.fs_ledger", "table_reference"),
         ("SELECT * FROM top-skill.topskill_analytics.fs_ledger", "table_reference"),
         ("SELECT * FROM top-skill.other_dataset.secrets", "table_reference"),
+        ("SELECT * FROM TOP-SKILL.other_dataset.secrets", "table_reference"),
+        ("SELECT * FROM ledger AS l JOIN top-skill.ds.t AS x ON TRUE", "table_reference"),
         ("SELECT * FROM `top-skill.topskill_analytics.fs_ledger`", "quoted_identifier"),
         ("SELECT * FROM `topskill_analytics`.`fs_ledger`", "quoted_identifier"),
         ("SELECT * FROM `\\x74opskill_analytics`.ledger", "quoted_identifier"),

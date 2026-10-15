@@ -120,10 +120,16 @@ async def analytics_ask(
     await ratelimit.hit(ASK_BUCKET, user.uid, limit=get_settings().analytics_ask_per_hour, window="hour")
     refresh = await analytics.refresh_for_question()
     try:
-        result = await analytics.ask(question, user.uid)
+        async with asyncio.timeout(analytics.limits.ask_timeout_s):
+            result = await analytics.ask(question, user.uid)
     except WarehouseError as exc:
         log.error("analytics_ask_unavailable error=%s", str(exc)[:500])
         raise _unavailable() from exc
+    except TimeoutError as exc:  # a model call (or the whole question) exceeded its budget
+        log.warning("analytics_ask_timeout budget_s=%s", analytics.limits.ask_timeout_s)
+        raise ApiError(
+            503, Codes.SERVICE_UNAVAILABLE, "Ask your data took too long to answer. Please try again."
+        ) from exc
     log.info(
         "analytics_ask outcome=%s rows=%d bytes=%d sync=%s",
         result.outcome,

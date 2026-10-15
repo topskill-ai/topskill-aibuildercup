@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -27,6 +28,7 @@ class FakeWarehouse:
     dataset: str = DATASET
     tables: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
     merges: list[tuple[str, int]] = field(default_factory=list)
+    merged: list[tuple[str, dict[str, Any]]] = field(default_factory=list)  # (table, row) per merged row
     schema_calls: int = 0
     dry_runs: list[DryRun | WarehouseError] = field(default_factory=list)
     results: list[QueryResult | WarehouseError] = field(default_factory=list)
@@ -44,6 +46,7 @@ class FakeWarehouse:
         for row in rows:
             assert set(row) == set(table.column_names) - {"synced_at"}, f"bad row keys for {table.physical}"
             store[row["id"]] = dict(row)
+            self.merged.append((table.physical, dict(row)))
         self.merges.append((table.physical, len(rows)))
         return len(rows)
 
@@ -75,13 +78,19 @@ class ScriptedPlanner(Planner):
         self.plan_calls: list[tuple[str, str | None, str | None]] = []
         self.answer_calls = 0
         self.answer_error: Exception | None = None
+        self.plan_delay_s = 0.0
+        self.answer_delay_s = 0.0
 
     async def plan(self, question: str, *, previous: str | None, error: str | None) -> tuple[SqlPlan, str]:
         self.plan_calls.append((question, previous, error))
+        if self.plan_delay_s:
+            await asyncio.sleep(self.plan_delay_s)
         return self.plans.pop(0), "fake-model"
 
     async def answer(self, question: str, sql: str, result: QueryResult) -> str:
         self.answer_calls += 1
+        if self.answer_delay_s:
+            await asyncio.sleep(self.answer_delay_s)
         if self.answer_error is not None:
             raise self.answer_error
         return self.answer_text
@@ -92,6 +101,10 @@ def plan(sql: str, chart: str = "none", x: str = "", y: str = "", cannot: str = 
 
 
 LIMITS = AskLimits(max_bytes=100 * 1024 * 1024, timeout_s=5, max_rows=200)
+FAST_LIMITS = AskLimits(
+    max_bytes=100 * 1024 * 1024, timeout_s=5, max_rows=200, plan_timeout_s=0.05, answer_timeout_s=0.05,
+    ask_timeout_s=0.5,
+)  # fmt: skip
 
 
 def make_analytics(
@@ -100,12 +113,13 @@ def make_analytics(
     *,
     state: SyncState | None = None,
     enabled: bool = True,
+    limits: AskLimits = LIMITS,
 ) -> Analytics:
     return Analytics(
         warehouse=warehouse or FakeWarehouse(),
         state=state or MemorySyncState(),
         planner=planner or ScriptedPlanner([]),
-        limits=LIMITS,
+        limits=limits,
         enabled=enabled,
         sync_min_interval_s=60,
         sync_wait_s=5,

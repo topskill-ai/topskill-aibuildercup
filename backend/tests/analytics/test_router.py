@@ -13,7 +13,7 @@ from topskill.analytics.warehouse import QueryResult, WarehouseError
 from topskill.config import Settings, get_settings
 from topskill.testing.factories import unique
 
-from .fakes import FakeWarehouse, ScriptedPlanner, make_analytics, plan
+from .fakes import FAST_LIMITS, FakeWarehouse, ScriptedPlanner, make_analytics, plan
 
 pytestmark = pytest.mark.emulator
 
@@ -109,6 +109,15 @@ async def test_warehouse_outage_is_503_and_sync_failure_is_fail_open(client, use
     # the failed on-demand sync did not block the question; the outage of the query itself is a 503
     assert resp.status_code == 503 and resp.json()["code"] == "service_unavailable"
     assert resp.json()["trace_id"]
+
+
+async def test_slow_model_is_a_503_not_a_hang(client, use) -> None:
+    planner = ScriptedPlanner([plan(SQL)])
+    planner.plan_delay_s = 5
+    use(make_analytics(planner=planner, limits=FAST_LIMITS))
+    resp = await client.post("/api/analytics/ask", json={"question": "How much?"}, headers=creator())
+    assert resp.status_code == 503 and resp.json()["code"] == "service_unavailable"
+    assert "too long" in resp.json()["message"] and resp.json()["trace_id"]
 
 
 async def test_rate_limit_per_creator(client, use, monkeypatch) -> None:

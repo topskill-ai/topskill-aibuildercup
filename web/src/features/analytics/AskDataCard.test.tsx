@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { jsonResponse, mockFetch } from "@/test/http";
@@ -93,6 +93,25 @@ describe("AskDataCard", () => {
     await userEvent.type(box, "How much did I earn?{Enter}");
     expect(await screen.findByText("Too many requests. Please try again later.")).toBeInTheDocument();
     expect(screen.getByTestId("trace-id")).toHaveTextContent("trace-123");
+  });
+
+  it("does not send while an IME is composing", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/analytics/status")) return jsonResponse(200, status);
+      return jsonResponse(200, answer);
+    });
+    renderCard();
+    const box = await screen.findByLabelText("Your question");
+    fireEvent.change(box, { target: { value: "Which agent earn" } });
+    fireEvent.keyDown(box, { key: "Enter", isComposing: true });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/api/analytics/ask"))).toBe(false);
+
+    fireEvent.keyDown(box, { key: "Enter" });
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/api/analytics/ask"))).toBe(true),
+    );
   });
 
   it("stays hidden when the feature is off or the backend has no analytics", async () => {

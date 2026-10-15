@@ -11,7 +11,7 @@ from topskill.analytics.nlq import ask, chart_hint_for, fallback_answer
 from topskill.analytics.tables import A2A_CALLS, AGENTS, LEDGER, RECORDS, ROUNDS, TABLES
 from topskill.analytics.warehouse import DryRun, QueryResult, WarehouseError, build_merge_sql, json_safe
 
-from .fakes import DATASET, LIMITS, PROJECT, FakeWarehouse, ScriptedPlanner, all_tables, plan
+from .fakes import DATASET, FAST_LIMITS, LIMITS, PROJECT, FakeWarehouse, ScriptedPlanner, all_tables, plan
 
 pytestmark = pytest.mark.unit
 
@@ -113,6 +113,24 @@ async def test_answer_model_failure_falls_back_to_plain_sentence() -> None:
     result = await run(wh, planner)
     assert result.outcome == "answered"
     assert result.answer == "The result is 1.60 credits."
+
+
+async def test_slow_answer_model_falls_back_to_plain_sentence() -> None:
+    planner = ScriptedPlanner([plan("SELECT SUM(amount_cents) AS income_cents FROM ledger")])
+    planner.answer_delay_s = 5
+    wh = FakeWarehouse(results=[QueryResult([("income_cents", "INTEGER")], [[160]], False, 8)])
+    result = await ask("How much?", "u_owner", warehouse=wh, planner=planner, limits=FAST_LIMITS)
+    assert result.outcome == "answered" and result.rows == [[160]]
+    assert result.answer == "The result is 1.60 credits."
+
+
+async def test_slow_sql_model_times_out_before_bigquery() -> None:
+    planner = ScriptedPlanner([plan(GOOD), plan(GOOD)])
+    planner.plan_delay_s = 5
+    wh = FakeWarehouse()
+    with pytest.raises(TimeoutError):
+        await ask("How much?", "u_owner", warehouse=wh, planner=planner, limits=FAST_LIMITS)
+    assert len(planner.plan_calls) == 1 and wh.queries == []
 
 
 async def test_empty_result_skips_the_answer_model() -> None:

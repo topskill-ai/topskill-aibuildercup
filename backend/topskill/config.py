@@ -141,11 +141,14 @@ class Settings(BaseSettings):
     analytics_max_rows: int = Field(200, ge=1, le=5000)
     analytics_ask_per_hour: int = Field(30, ge=0)
     analytics_sync_min_interval_s: int = Field(60, ge=0)
-    analytics_sync_wait_s: int = Field(20, ge=0, le=120)
+    analytics_sync_wait_s: int = Field(5, ge=0, le=120)  # the scheduler already keeps data ≤ 15 min old
     analytics_sync_invokers: CsvList = Field(default_factory=list)  # OIDC emails allowed to call the sync
     analytics_sync_audience: str = ""  # "" = PUBLIC_API_BASE
     model_analytics: str = "gemini-3.8-flash"
     model_analytics_fallback: str = "gemini-3-flash-preview"
+    analytics_plan_timeout_s: int = Field(25, ge=1, le=300)  # one SQL-writing model call
+    analytics_answer_timeout_s: int = Field(15, ge=1, le=300)  # summary call; on timeout: plain sentence
+    analytics_ask_timeout_s: int = Field(60, ge=1, le=600)  # whole question → 503 service_unavailable
 
     _split_analytics_lists = field_validator("analytics_sync_invokers", mode="before")(_split_csv)
 

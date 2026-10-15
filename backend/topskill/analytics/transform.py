@@ -182,6 +182,7 @@ def record_row(spec: TableSpec, doc_id: str, d: dict[str, Any]) -> dict[str, Any
             "created_at": ts(d.get("created_at")),
             "updated_at": ts(d.get("updated_at")),
             "completed_at": ts(d.get("completed_at")),
+            "followed_at": ts(d.get("followed_at")),
         },
     )
 

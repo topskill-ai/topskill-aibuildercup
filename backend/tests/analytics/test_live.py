@@ -17,14 +17,17 @@ import pytest
 from topskill.analytics import transform
 from topskill.analytics.nlq import AskLimits, Planner, ask
 from topskill.analytics.sync import MemorySyncState, SyncJob
-from topskill.analytics.tables import AGENTS, LEDGER, TABLES
+from topskill.analytics.tables import AGENTS, LEDGER, ROUNDS, TABLES
 from topskill.analytics.warehouse import BigQueryWarehouse
 from topskill.testing.factories import unique
 
 pytestmark = pytest.mark.live
 
 DATASET = os.environ.get("ANALYTICS_LIVE_DATASET", "topskill_analytics_dev")
-LIMITS = AskLimits(max_bytes=100 * 1024 * 1024, timeout_s=30, max_rows=200)
+# Generous model budgets: these tests check the Google integration, not latency under shared quota.
+LIMITS = AskLimits(
+    max_bytes=100 * 1024 * 1024, timeout_s=30, max_rows=200, plan_timeout_s=120, answer_timeout_s=60
+)
 
 
 def warehouse() -> BigQueryWarehouse:
@@ -77,10 +80,22 @@ async def test_live_question_answers_from_own_rows_only() -> None:
         transform.agent_row(AGENTS, a, {"owner_uid": o, "title": t, "created_at": now})
         for a, o, t in (("agt_visa", me, "Visa Advisor"), ("agt_cv", me, "Resume Reviewer"))
     ]
+    conv = {"owner_uid": me, "agent_id": "agt_visa", "visitor_uid": "vis_live"}
+    rounds = [
+        transform.round_row(
+            ROUNDS,
+            f"cnv_{unique()}",
+            conv,
+            f"m_{i}",
+            {"role": "model", "status": "ok", "usage": {"model": model}, "created_at": now},
+        )
+        for i, model in enumerate(["gemini-3.8-flash", "gemini-3.8-flash", "gemini-3-flash-preview"])
+    ]
     try:
         assert await wh.merge_rows(LEDGER, rows) == 4
         assert await wh.merge_rows(LEDGER, rows) == 4  # idempotent upsert: same keys, no duplicates
         await wh.merge_rows(AGENTS, [a for a in agents if a])
+        await wh.merge_rows(ROUNDS, [r for r in rounds if r])
         planner = Planner(["gemini-3.8-flash", "gemini-3-flash-preview"])
         result = await ask(
             "Which agent earned the most from A2A this week?",
@@ -121,6 +136,18 @@ async def test_live_question_answers_from_own_rows_only() -> None:
         )
         print("SNEAKY:", sneaky.outcome, sneaky.sql, sneaky.rows)
         assert "Someone Else" not in str(sneaky.rows) and "99900" not in str(sneaky.rows)
+
+        # ``model`` is a column the guard must let through (it used to be a forbidden word).
+        models = await ask(
+            "Which Gemini model answered the most of my rounds?",
+            me,
+            warehouse=wh,
+            planner=planner,
+            limits=LIMITS,
+        )
+        print("MODELS:", models.outcome, models.sql, models.rows, models.answer)
+        assert models.outcome == "answered", models.answer
+        assert "gemini-3.8-flash" in str(models.rows)
     finally:
         _delete_owner_rows(wh, [me, other])
 
@@ -136,10 +163,12 @@ async def test_live_sync_from_emulator_into_bigquery() -> None:
     owner = unique("live_sync_")
     ids = await seed(owner)
     try:
-        report = await SyncJob(wh, MemorySyncState()).run()
+        state = MemorySyncState()
+        report = await SyncJob(wh, state).run()
         print(report.to_wire())
-        assert report.ran and all(s.written >= 1 for s in report.sources.values())
-        again = await SyncJob(wh, MemorySyncState()).run()
+        assert report.ran
+        assert all(s.written >= 1 for k, s in report.sources.items() if k != "records_follow")
+        again = await SyncJob(wh, MemorySyncState()).run()  # no fingerprints: every row merged again
         assert again.ran
         res = await wh.query(
             f"SELECT COUNT(*) AS n, COUNT(DISTINCT id) AS d FROM `{wh.project}.{wh.dataset}.fs_rounds` "
@@ -158,5 +187,28 @@ async def test_live_sync_from_emulator_into_bigquery() -> None:
             max_rows=10,
         )
         assert rec.rows == [[["nationality"], "in_progress"]], (rec.rows, ids)
+
+        # A creator's follow-up change (P1 endpoint; does not bump updated_at) reaches BigQuery.
+        from types import SimpleNamespace
+
+        from topskill.records import service as records_service
+
+        await records_service.update_follow(
+            SimpleNamespace(id=ids["agent"]),  # type: ignore[arg-type]
+            ids["record"],
+            follow_status="done",
+            follow_note=None,
+        )
+        third = await SyncJob(wh, state).run()
+        print(third.to_wire())
+        follow = await wh.query(
+            f"SELECT follow_status, followed_at IS NOT NULL FROM `{wh.project}.{wh.dataset}.fs_records` "
+            "WHERE owner_uid = @uid",
+            owner,
+            max_bytes=LIMITS.max_bytes,
+            timeout_s=30,
+            max_rows=10,
+        )
+        assert follow.rows == [["done", True]], follow.rows
     finally:
         _delete_owner_rows(wh, [owner])

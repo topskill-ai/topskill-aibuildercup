@@ -8,11 +8,16 @@
 3. a BigQuery dry run must report a SELECT that references only the analytics tables and scans at most
    ``ANALYTICS_MAX_BYTES``; the real run has ``maximum_bytes_billed``, a job timeout and a row cap;
 4. an invalid query (guard or BigQuery syntax/semantic error) gets ONE repair attempt with the error;
-5. Gemini writes a 1-3 sentence answer from the rows (falls back to a plain sentence if that call fails).
+5. Gemini writes a 1-3 sentence answer from the rows (falls back to a plain sentence if that call fails
+   or takes longer than ``ANALYTICS_ANSWER_TIMEOUT_S``).
+
+Each SQL-writing call is bounded by ``ANALYTICS_PLAN_TIMEOUT_S`` (``TimeoutError`` propagates; the router
+also bounds the whole question by ``ANALYTICS_ASK_TIMEOUT_S`` and answers 503 on either).
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -112,8 +117,11 @@ class AskResult:
 @dataclass(frozen=True)
 class AskLimits:
     max_bytes: int
-    timeout_s: float
+    timeout_s: float  # BigQuery job timeout
     max_rows: int
+    plan_timeout_s: float = 25.0  # one SQL-writing model call (its own fallback chain and retries)
+    answer_timeout_s: float = 15.0  # the summary call; on timeout the plain fallback sentence is used
+    ask_timeout_s: float = 60.0  # the whole question (applied by the router)
 
 
 # --------------------------------------------------------------------------- prompts
@@ -249,7 +257,8 @@ async def ask(
     model_used: str | None = None
     last_sql = ""
     for _attempt in range(2):
-        plan, model_used = await planner.plan(question, previous=previous, error=error)
+        async with asyncio.timeout(limits.plan_timeout_s):
+            plan, model_used = await planner.plan(question, previous=previous, error=error)
         last_sql = (plan.sql or "").strip()
         if not last_sql:
             reason = _clean_answer(plan.cannot_answer) or (
@@ -290,11 +299,14 @@ async def ask(
                 raise
             log.warning("analytics_query_invalid error=%s", exc.user_message[:200])
             return _rejected(question, checked, model_used, "I could not run that query. Try rephrasing.")
-        try:
-            answer = await planner.answer(question, checked, result) if result.rows else ""
-        except Exception as exc:  # the rows are the answer; a failed summary must not lose them
-            log.warning("analytics_answer_failed error=%s", type(exc).__name__)
-            answer = ""
+        answer = ""
+        if result.rows:
+            try:  # the rows are the answer; a failed or slow summary must not lose them
+                async with asyncio.timeout(limits.answer_timeout_s):
+                    answer = await planner.answer(question, checked, result)
+            except Exception as exc:  # TimeoutError included
+                log.warning("analytics_answer_failed error=%s", type(exc).__name__)
+                answer = ""
         return AskResult(
             question=question,
             outcome="answered",

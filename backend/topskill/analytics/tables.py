@@ -198,6 +198,7 @@ RECORDS = TableSpec(
         _c("created_at", "TIMESTAMP", "First save (UTC).", required=True),
         _c("updated_at", "TIMESTAMP", "Last change (UTC)."),
         _c("completed_at", "TIMESTAMP", "When the record was completed (UTC)."),
+        _c("followed_at", "TIMESTAMP", "When the creator last changed follow_status (UTC)."),
         _SYNCED,
     ),
 )

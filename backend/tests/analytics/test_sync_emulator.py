@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
-from topskill.analytics.sync import FirestoreSyncState, MemorySyncState, SyncJob
+from topskill.analytics import sync as sync_module
+from topskill.analytics.sync import FirestoreSyncState, MemorySyncState, SyncJob, sync_if_stale
 from topskill.db import Col, get_db, utcnow
+from topskill.records import service as records_service
 from topskill.testing.factories import unique
 
 from .fakes import FakeWarehouse
@@ -237,3 +241,83 @@ async def test_memory_state_lease_semantics() -> None:
     await state.release_lease("a", finished=True)
     assert await state.try_lease("b", timedelta(minutes=1))
     assert await state.last_finished_at() is not None
+
+
+def merged_for(wh: FakeWarehouse, owner: str) -> list[tuple[str, str]]:
+    return [(table, row["id"]) for table, row in wh.merged if row["owner_uid"] == owner]
+
+
+async def test_unchanged_rows_in_the_overlap_window_are_not_merged_again() -> None:
+    owner = unique("own_")
+    ids = await seed(owner)
+    wh = FakeWarehouse()
+    job = SyncJob(wh, FirestoreSyncState(prefix=f"{unique('test_')}_"))
+    await job.run()
+    assert len(merged_for(wh, owner)) == 6
+    wh.merged.clear()
+
+    second = await job.run()  # every doc of this owner is re-read (overlap window) but none changed
+    assert second.ran and merged_for(wh, owner) == []
+
+    # A change inside the A2A lookback (no timestamp moves) is still detected and merged, alone.
+    await get_db().collection(Col.A2A_CALLS).document(ids["call"]).update({"status": "failed"})
+    await job.run()
+    assert merged_for(wh, owner) == [("fs_a2a_calls", ids["call"])]
+    assert wh.rows_for("fs_a2a_calls", owner)[ids["call"]]["status"] == "failed"
+
+    # A full resync ignores the fingerprints.
+    wh.merged.clear()
+    await job.run(full=True)
+    assert len(merged_for(wh, owner)) == 6
+
+
+async def test_follow_up_changes_reach_the_warehouse() -> None:
+    owner = unique("own_")
+    ids = await seed(owner)
+    wh = FakeWarehouse()
+    job = SyncJob(wh, FirestoreSyncState(prefix=f"{unique('test_')}_"))
+    await job.run()
+    assert wh.rows_for("fs_records", owner)[ids["record"]]["follow_status"] == "new"
+
+    # P1 follow-up endpoints change follow_status/followed_at only (updated_at does not move).
+    agent = SimpleNamespace(id=ids["agent"])
+    await records_service.update_follow(agent, ids["record"], follow_status="done", follow_note=None)  # type: ignore[arg-type]
+    report = await job.run()
+    row = wh.rows_for("fs_records", owner)[ids["record"]]
+    assert row["follow_status"] == "done" and row["followed_at"] is not None
+    assert report.sources["records_follow"].read >= 1
+
+    await records_service.batch_follow(agent, [ids["record"]], "invalid")  # type: ignore[arg-type]
+    await job.run()
+    assert wh.rows_for("fs_records", owner)[ids["record"]]["follow_status"] == "invalid"
+
+
+async def test_failing_sync_is_attempted_once_per_interval(monkeypatch) -> None:
+    monkeypatch.setattr(sync_module, "_current", None)
+    state = MemorySyncState()
+    runs = 0
+
+    class FailingJob(SyncJob):
+        async def run(self, *, full: bool = False):  # type: ignore[override]
+            nonlocal runs
+            runs += 1
+            assert await self.state.try_lease("x", timedelta(minutes=1))
+            await self.state.release_lease("x", finished=False)
+            raise RuntimeError("bigquery down")
+
+    def factory() -> SyncJob:
+        return FailingJob(FakeWarehouse(), state)
+
+    async def call():
+        return await sync_if_stale(factory, min_interval_s=60, wait_s=1, spawn=asyncio.ensure_future)
+
+    with pytest.raises(RuntimeError, match="bigquery down"):
+        await call()
+    again = await call()
+    assert runs == 1 and not again.ran and again.reason == "recent_attempt"
+    assert await state.last_finished_at() is None  # data_as_of still reflects the last success
+
+    state.attempted_at = utcnow() - timedelta(seconds=61)
+    with pytest.raises(RuntimeError):
+        await call()
+    assert runs == 2
