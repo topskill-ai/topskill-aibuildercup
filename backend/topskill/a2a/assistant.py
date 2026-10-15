@@ -175,7 +175,9 @@ def _code_for_status(status: int) -> str:
 
 def _clip(text: str, n: int) -> str:
     text = " ".join(text.split())
-    return text if len(text) <= n else text[: n - 1] + "…"
+    if len(text) <= n:
+        return text
+    return text[: n - 1].rstrip(" .,;:…") + "…"
 
 
 def _texts(parts: list[dict] | None) -> str:

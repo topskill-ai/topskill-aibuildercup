@@ -74,3 +74,8 @@ async def test_same_title_copies_collapse_to_the_oldest(monkeypatch) -> None:
 def test_model_facing_amounts_are_credits() -> None:
     assert [assistant.credits(c) for c in (0, 5, 100, 250, 600)] == ["0.00", "0.05", "1.00", "2.50", "6.00"]
     assert "cents" not in assistant.ASSISTANT_PROMPT.replace("never mention cents", "")
+
+
+def test_clip_does_not_leave_punctuation_before_the_ellipsis() -> None:
+    assert assistant._clip("Work visas in Brazil. More text follows here", 22) == "Work visas in Brazil…"
+    assert assistant._clip("short", 22) == "short"

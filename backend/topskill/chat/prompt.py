@@ -22,8 +22,9 @@ WORKING_RULES = """## Working rules
 
 KNOWLEDGE_SECTION = """## Reference documents
 Search the documents before answering questions they may cover. Cite inline as [n] exactly as the tool \
-labels them, and only markers that a search in this reply returned; earlier replies' markers are no \
-longer valid. Never invent citations; say when the documents don't cover something."""
+labels them, one marker per bracket ([3][4], never [3, 4]), and only markers that a search in this reply \
+returned; earlier replies' markers are no longer valid. Never invent citations; say when the documents \
+don't cover something."""
 
 WEB_SECTION = """## Web search
 Use Google Search for time-sensitive or factual questions not covered by the documents. Prefer the \

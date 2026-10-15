@@ -19,7 +19,10 @@ log = logging.getLogger(__name__)
 
 RESULT_TEXT_CHARS = 1200
 MAX_OUTPUT_CHARS = 16_000
-NOTE = "Cite as [n]. If nothing relevant, say the documents don't cover it."
+NOTE = (
+    "Cite as [n], one marker per bracket ([3][4], not [3, 4]). "
+    "If nothing relevant, say the documents don't cover it."
+)
 UNAVAILABLE_NOTE = "The document search is temporarily unavailable. Answer without the documents and say so."
 
 
@@ -58,7 +61,7 @@ def format_results(passages: list[Passage], numbers: list[int]) -> dict:
 def make_search_tool(agent_id: str, collector: CitationCollector | None) -> FunctionTool:
     async def search_knowledge(query: str) -> dict:
         """Search the creator's reference documents. Use for any question that may be covered by them.
-        Cite results inline as [n]."""
+        Cite results inline as [n], one marker per bracket."""
         try:
             passages = await service.search(agent_id, query)
         except Exception:
