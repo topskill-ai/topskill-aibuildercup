@@ -139,6 +139,51 @@ async def test_only_empty_never_overwrites_and_extraction_completion() -> None:
     assert (await _doc(agent, cid))["status"] == "completed"
 
 
+async def test_extraction_keeps_tool_summary_and_updated_at() -> None:
+    _, agent, visitor, cid = await _ctx()
+    res = await _apply(
+        agent,
+        visitor,
+        cid,
+        {
+            "nationality": {"value": "br", "evidence": "Brazil"},
+            "has_offer": {"value": True, "evidence": "yes"},
+        },
+        complete=True,
+        summary="Tool summary: wants work visa",
+    )
+    assert res.ok and res.completed
+    before = await _doc(agent, cid)
+    res = await _apply(
+        agent,
+        visitor,
+        cid,
+        {"nationality": {"value": "in", "evidence": "?"}},
+        source="extraction",
+        only_empty=True,
+        summary="Extraction summary",
+    )
+    after = await _doc(agent, cid)
+    assert res.ok and res.saved == 0
+    assert after["summary"] == "Tool summary: wants work visa"
+    assert after["updated_at"] == before["updated_at"]
+    assert after["data"]["nationality"]["value"] == "br"
+
+
+async def test_extraction_fills_missing_summary() -> None:
+    _, agent, visitor, cid = await _ctx()
+    await _apply(agent, visitor, cid, {"nationality": {"value": "br", "evidence": "Brazil"}})
+    await _apply(agent, visitor, cid, {}, source="extraction", only_empty=True, summary="From Brazil")
+    assert (await _doc(agent, cid))["summary"] == "From Brazil"
+
+
+async def test_first_create_only_increments_records_stat() -> None:
+    _, agent, visitor, cid = await _ctx()
+    await _apply(agent, visitor, cid, {"nationality": {"value": "br", "evidence": "Brazil"}})
+    stats = await _stats(agent)
+    assert stats["records"] == 1 and stats.get("last_activity_at") is None  # billing owns it
+
+
 async def test_records_disabled_and_foreign_record() -> None:
     owner = await make_user("creator")
     plain = await make_agent(owner)

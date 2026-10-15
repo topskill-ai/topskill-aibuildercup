@@ -178,9 +178,12 @@ async def test_record_detail_patch_and_batch_follow(client) -> None:
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["id"] == rid and body["data"]["full_name"]["value"] == "•••"
-    assert [m["text"] for m in body["transcript"]] == ["I'm from Brazil", "Noted!"]
+    # The transcript repeats the PII, so it is hidden behind the same reveal toggle.
+    assert body["transcript"] == [] and body["transcript_hidden"] is True
     r = await client.get(f"/api/agents/{agent.id}/records/{rid}?reveal_pii=1", headers=H(owner))
     assert r.json()["data"]["full_name"]["value"] == "Ana"
+    assert [m["text"] for m in r.json()["transcript"]] == ["I'm from Brazil", "Noted!"]
+    assert r.json()["transcript_hidden"] is False
 
     r = await client.patch(
         f"/api/agents/{agent.id}/records/{rid}",
@@ -205,6 +208,28 @@ async def test_record_detail_patch_and_batch_follow(client) -> None:
         f"/api/agents/{agent.id}/records/follow", json={"ids": [], "follow_status": "done"}, headers=H(owner)
     )
     assert r.status_code == 400
+
+
+async def test_detail_without_pii_shows_transcript(client) -> None:
+    no_pii = {"fields": [f for f in VISA_SCHEMA["fields"] if not f.get("pii")]}
+    owner, agent = await make_records_agent(config={"record_schema": no_pii})
+    visitor = await make_user("visitor")
+    conv = await make_conversation(agent, visitor, turns=[("I'm from Brazil", "Noted!")])
+    await _seed(agent, visitor, cid=conv.id, nationality="br")
+    r = await client.get(f"/api/agents/{agent.id}/records/{record_id(agent.id, conv.id)}", headers=H(owner))
+    assert r.status_code == 200 and r.json()["transcript_hidden"] is False
+    assert [m["text"] for m in r.json()["transcript"]] == ["I'm from Brazil", "Noted!"]
+
+
+async def test_validate_endpoint_rejects_string_flags(client) -> None:
+    owner, agent = await make_records_agent()
+    r = await client.post(
+        f"/api/agents/{agent.id}/record-schema/validate",
+        json={"record_schema": {"fields": [{"key": "a", "label": "A", "type": "text", "required": "false"}]}},
+        headers=H(owner),
+    )
+    assert r.status_code == 400 and r.json()["code"] == "record_schema_invalid"
+    assert r.json()["detail"]["errors"][0]["loc"][-1] == "required"
 
 
 async def test_idor_records_of_another_agent_are_404(client) -> None:

@@ -90,10 +90,16 @@ async def get_record(
     agent = await get_owned_agent(agent_id, user)
     doc = await service.get_scoped_record(agent, record_id)
     schema = await _table_schema(agent)
-    messages = await list_messages(doc["conversation_id"], limit=TRANSCRIPT_LIMIT)
+    # The visitor's own words repeat any PII the record holds, so the transcript sits behind the same
+    # reveal toggle as the masked values (records without PII show it straight away).
+    transcript_hidden = service.record_has_pii(doc, schema) and not reveal_pii
+    messages = (
+        [] if transcript_hidden else await list_messages(doc["conversation_id"], limit=TRANSCRIPT_LIMIT)
+    )
     return {
         **service.record_to_wire(doc, schema, reveal_pii=reveal_pii),
         "transcript": [message_to_wire(m) for m in messages],
+        "transcript_hidden": transcript_hidden,
     }
 
 

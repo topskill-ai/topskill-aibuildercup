@@ -70,6 +70,13 @@ def test_drops_options_on_non_choice_and_range_on_non_number() -> None:
         (_field(type="single_choice", options=[{"key": "a", "label": ""}]), "label"),
         (_field(type="number", min=5, max=1), "min"),
         (_field(type="number", min="x"), "min"),
+        (_field(required="false"), "required"),
+        (_field(pii="no"), "pii"),
+        (_field(show_in_table=1), "show_in_table"),
+        (_field(label=123), "label"),
+        (_field(description=["x"]), "description"),
+        (_field(key=7), "key"),
+        (_field(type="single_choice", options=[{"key": "a", "label": 5}]), "label"),
     ],
 )
 def test_strict_errors(raw_field, loc_tail) -> None:
@@ -127,3 +134,10 @@ def test_normalize_values() -> None:
     ]:
         with pytest.raises(InvalidValue):
             normalize_value(s[field], bad)
+
+
+def test_flags_only_real_booleans() -> None:
+    schema = validate_schema({"fields": [_field(required=True, pii=False, show_in_table=None)]})
+    assert schema is not None
+    field = schema.fields[0]
+    assert field.required is True and field.pii is False and field.show_in_table is False

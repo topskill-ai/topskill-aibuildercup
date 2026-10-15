@@ -203,7 +203,8 @@ async def apply_values(
             else:
                 status, completed_at = "completed", now
         new_summary = (existing or {}).get("summary")
-        if summary_text:
+        # only_empty (extraction) never replaces a summary that is already there (e.g. written by the tool).
+        if summary_text and not (only_empty and new_summary):
             new_summary = _scrub_summary(summary_text, schema, data, visitor.display_name)
 
         changed = (
@@ -234,7 +235,9 @@ async def apply_values(
                     "updated_at": now,
                 },
             )
-            tx.set(stats_ref, {"records": firestore.Increment(1), "last_activity_at": now}, merge=True)
+            tx.set(
+                stats_ref, {"records": firestore.Increment(1)}, merge=True
+            )  # T7: last_activity_at is billing's
         elif changed:
             tx.update(
                 ref,
@@ -280,6 +283,13 @@ def _value_to_wire(entry: dict[str, Any], *, masked: bool) -> dict[str, Any]:
         "updated_at": iso_z(entry.get("updated_at")),
         "source": entry.get("source", "tool"),
     }
+
+
+def record_has_pii(doc: dict[str, Any], schema: RecordSchema | None) -> bool:
+    """True when the schema has a PII field or any stored value was written as PII."""
+    if schema and any(f.pii for f in schema.fields):
+        return True
+    return any(isinstance(e, dict) and e.get("pii") for e in (doc.get("data") or {}).values())
 
 
 def record_to_wire(doc: dict[str, Any], schema: RecordSchema | None, *, reveal_pii: bool) -> dict[str, Any]:

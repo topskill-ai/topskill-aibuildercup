@@ -50,6 +50,11 @@ def _invalid(errors: list[dict[str, Any]]) -> ApiError:
     return ApiError(400, Codes.RECORD_SCHEMA_INVALID, "The record fields are invalid.", {"errors": errors})
 
 
+def _str_or_empty(value: Any) -> str:
+    """Strings pass through; anything else (already reported as an error) becomes ``""``."""
+    return value if isinstance(value, str) else ""
+
+
 def _clean_text(value: Any) -> str:
     return " ".join(str(value).split()) if value is not None else ""
 
@@ -63,15 +68,24 @@ def _normalize_field(raw: Any, index: int, errors: FieldErrors) -> RecordField |
         errors.add(loc, "must be an object")
         return None
     before = len(errors.items)
-    key = str(raw.get("key") or "").strip()
+    for name in ("key", "label", "description"):
+        if raw.get(name) is not None and not isinstance(raw.get(name), str):
+            errors.add([*loc, name], "must be a string")
+    flags: dict[str, bool] = {}
+    for name in ("required", "pii", "show_in_table"):
+        flag = raw.get(name)
+        if flag is not None and not isinstance(flag, bool):
+            errors.add([*loc, name], "must be true or false")
+        flags[name] = flag is True
+    key = _str_or_empty(raw.get("key")).strip()
     if not KEY_RE.match(key):
         errors.add([*loc, "key"], "must match ^[a-z][a-z0-9_]{0,39}$")
-    label = _clean_text(raw.get("label"))
+    label = _clean_text(_str_or_empty(raw.get("label")))
     if not label:
         errors.add([*loc, "label"], "is required")
     elif len(label) > MAX_LABEL:
         errors.add([*loc, "label"], f"must be at most {MAX_LABEL} characters")
-    description = str(raw.get("description") or "").strip()
+    description = _str_or_empty(raw.get("description")).strip()
     if len(description) > MAX_DESCRIPTION:
         errors.add([*loc, "description"], f"must be at most {MAX_DESCRIPTION} characters")
     ftype = raw.get("type")
@@ -94,8 +108,12 @@ def _normalize_field(raw: Any, index: int, errors: FieldErrors) -> RecordField |
             if not isinstance(opt, dict):
                 errors.add([*loc, "options", j], "must be an object")
                 continue
-            okey = str(opt.get("key") or "").strip()
-            olabel = _clean_text(opt.get("label"))
+            if not isinstance(opt.get("key"), str):
+                errors.add([*loc, "options", j, "key"], "must be a string")
+            if not isinstance(opt.get("label"), str):
+                errors.add([*loc, "options", j, "label"], "must be a string")
+            okey = _str_or_empty(opt.get("key")).strip()
+            olabel = _clean_text(_str_or_empty(opt.get("label")))
             if not KEY_RE.match(okey):
                 errors.add([*loc, "options", j, "key"], "must match ^[a-z][a-z0-9_]{0,39}$")
             elif okey in seen:
@@ -130,9 +148,9 @@ def _normalize_field(raw: Any, index: int, errors: FieldErrors) -> RecordField |
         type=ftype,
         description=description,
         options=options,  # dropped silently for non-choice types
-        required=bool(raw.get("required", False)),
-        pii=bool(raw.get("pii", False)),
-        show_in_table=bool(raw.get("show_in_table", False)),
+        required=flags["required"],
+        pii=flags["pii"],
+        show_in_table=flags["show_in_table"],
         min=float(fmin) if fmin is not None else None,  # dropped silently for non-number types
         max=float(fmax) if fmax is not None else None,
     )
