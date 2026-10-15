@@ -14,7 +14,7 @@ from topskill.chat import build_instruction, build_runtime_agent, classify_outco
 from topskill.chat.agent_factory import agent_name, search_mode_for
 from topskill.chat.deps import is_stub
 from topskill.chat.events import TurnState, clip_target, describe_tool
-from topskill.chat.history import trim_history
+from topskill.chat.history import strip_citation_markers, trim_history
 from topskill.chat.skill_tools import make_skill_tools, safe_path, strip_front_matter
 from topskill.db import new_id
 from topskill.domain import AgentConfig, AgentDoc, AgentVersion, MessageDoc, Pricing, SkillFile, SkillRef
@@ -135,6 +135,18 @@ def test_trim_history_rules() -> None:
     big = [_msg("user" if i % 2 == 0 else "model", "y" * 7000, i) for i in range(8)]
     trimmed = trim_history(big)
     assert sum(len(i.text) for i in trimmed) <= 24_000 and trimmed[0].role == "user"
+
+
+def test_history_drops_citation_markers_from_model_text() -> None:
+    text = "Apply early [1]. Fees vary [3, 4].\n- Proof of funds [2-3][5].\nSee [docs](https://x) [6](https://y)."
+    assert strip_citation_markers(text) == (
+        "Apply early. Fees vary.\n- Proof of funds.\nSee [docs](https://x) [6](https://y)."
+    )
+    assert strip_citation_markers("Steps [a] and `list[0]` stay") == "Steps [a] and `list[0]` stay"
+    assert strip_citation_markers("```\nx = y[1]\n```\nDone[2].") == "```\nx = y[1]\n```\nDone."
+    msgs = [_msg("user", "Ask about [1] please", 0), _msg("model", "Answer [1].", 1), _msg("model", "[2]", 2)]
+    items = trim_history(msgs)
+    assert [(i.role, i.text) for i in items] == [("user", "Ask about [1] please"), ("model", "Answer.")]
 
 
 # --------------------------------------------------------------------------- agent factory
