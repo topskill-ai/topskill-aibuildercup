@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, type Ref, type TextareaHTMLAttributes } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, type Ref, type TextareaHTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
 import { controlClasses } from "./Input";
 
@@ -31,7 +31,7 @@ export function Textarea({
     [ref],
   );
 
-  useLayoutEffect(() => {
+  const measure = useCallback(() => {
     const el = inner.current;
     if (!autoResize || !el) return;
     el.style.height = "auto";
@@ -42,7 +42,31 @@ export function Textarea({
     const max = line * maxRows + padding + border;
     el.style.height = `${Math.min(el.scrollHeight + border, max)}px`;
     el.style.overflowY = el.scrollHeight + border > max ? "auto" : "hidden";
-  }, [autoResize, maxRows, value]);
+  }, [autoResize, maxRows]);
+
+  useLayoutEffect(measure, [measure, value, props.placeholder]);
+
+  // The height of an empty field follows its placeholder, which rewraps when the width changes
+  // (narrow screens, late layout) or the web font arrives. Re-measure on width changes only.
+  useEffect(() => {
+    const el = inner.current;
+    if (!autoResize || !el) return;
+    let width = el.clientWidth;
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
+      if (el.clientWidth === width) return;
+      width = el.clientWidth;
+      measure();
+    });
+    ro?.observe(el);
+    let alive = true;
+    void document.fonts?.ready.then(() => {
+      if (alive) measure();
+    });
+    return () => {
+      alive = false;
+      ro?.disconnect();
+    };
+  }, [autoResize, measure]);
 
   return (
     <textarea
