@@ -13,11 +13,11 @@ import time
 import pytest
 
 from tests.core.helpers import settings_env
-from tests.knowledge.docs import make_pdf
+from tests.knowledge.docs import make_docx, make_pdf
 from tests.knowledge.live_helpers import gemini_api_key
 from topskill.db import utcnow
 from topskill.knowledge import file_search, service
-from topskill.knowledge.base import KnowledgeFileDoc
+from topskill.knowledge.base import KnowledgeFileDoc, file_type
 from topskill.knowledge.extract import extract_text
 from topskill.knowledge.file_search import FileSearchBackend
 
@@ -122,3 +122,47 @@ async def test_live_service_flow_on_emulator(live_file_search, client, dev_auth)
     finally:
         if store:
             await FileSearchBackend().delete_store(store)
+
+
+NON_PDF_SAMPLES = {
+    ".md": b"# Office hours\n\nThe Lumeria office opens at 08:15 and closes at 16:40 on weekdays.\n",
+    ".txt": b"The Lumeria office opens at 08:15 and closes at 16:40 on weekdays.\n",
+    ".csv": b"service,price_zorkmids,days\nstandard,0,19\npriority,480,5\nsuper priority,1200,1\n",
+}
+
+
+@pytest.mark.parametrize("suffix", [".md", ".txt", ".csv", ".docx"])
+async def test_live_upload_each_accepted_type(live_file_search, suffix: str) -> None:
+    """Every accepted non-PDF type indexes (csv/docx used to fail with 400 on an explicit mime_type)."""
+    filename = f"sample{suffix}"
+    data = (
+        make_docx(["The Lumeria office opens at 08:15 and closes at 16:40 on weekdays."])
+        if suffix == ".docx"
+        else NON_PDF_SAMPLES[suffix]
+    )
+    mime = file_type(filename)
+    text = extract_text(data, mime)
+    now = utcnow()
+    file = KnowledgeFileDoc(
+        file_id="kf_" + "2" * 20,
+        filename=filename,
+        mime=mime,
+        size=len(data),
+        gcs_path=f"knowledge/agt_live/kf/{filename}",
+        backend="file_search",
+        created_at=now,
+        updated_at=now,
+    )
+    backend = FileSearchBackend()
+    store = await backend.create_store(f"agt_live{suffix[1:]}{int(time.time())}")
+    try:
+        result = await backend.ingest("agt_live", store, file, data, text)
+        assert result.fs_document_name and result.fs_document_name.startswith(store)
+        assert result.pages is None
+        await backend.delete(
+            "agt_live", store, file.model_copy(update={"fs_document_name": result.fs_document_name})
+        )
+        client = file_search.get_client()
+        assert [d async for d in await client.aio.file_search_stores.documents.list(parent=store)] == []
+    finally:
+        await backend.delete_store(store)

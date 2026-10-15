@@ -2,9 +2,13 @@
 
 * One File Search store per agent (``display_name = "topskill-{agent_id}"``); its name is kept in
   ``agents/{id}.knowledge_store`` by the service (race-free claim, transaction T9).
-* Upload: ``upload_to_file_search_store`` with ``display_name = "{file_id}__{filename}"`` and small
-  white-space chunks (so a passage rarely spans pages), then poll the operation until done. The returned
-  document name is saved as ``fs_document_name``.
+* Upload: ``upload_to_file_search_store`` from a temp file path whose suffix is the original extension
+  (D1; the SDK derives the content type from it; an explicit ``mime_type`` is rejected by the API for
+  csv/docx), with ``display_name = "{file_id}__{filename}"`` and small white-space chunks (so a passage
+  rarely spans pages), then poll the operation until done. The returned document name is saved as
+  ``fs_document_name``. A 4xx answer or a poll timeout is never retried (a timed-out operation may still
+  complete, so a second upload could leave an untracked document); ``delete`` also removes any document
+  whose display name carries the file id, so such leftovers are dropped when the file is deleted.
 * Search: ADK chat runs on Vertex, where the FileSearch tool does not exist, so retrieval is one
   Developer-API ``generate_content`` call with the FileSearch tool. The generated text is ignored; the
   passages come from ``candidates[0].grounding_metadata.grounding_chunks[*].retrieved_context``
@@ -19,14 +23,16 @@ Only this module uses the Developer API key (``GEMINI_API_KEY``); everything els
 from __future__ import annotations
 
 import asyncio
-import io
 import json
 import logging
+import os
 import re
+import tempfile
 import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 
 from google import genai
 from google.genai import errors as genai_errors
@@ -154,8 +160,25 @@ class PageIndex:
         return start, end
 
 
+def _write_temp(data: bytes, suffix: str) -> str:
+    """Write ``data`` to a temp file named with the original extension (D1); the caller unlinks it."""
+    with tempfile.NamedTemporaryFile(prefix="topskill-kf-", suffix=suffix, delete=False) as tmp:
+        tmp.write(data)
+        return tmp.name
+
+
+class UploadTimeout(IndexingError):
+    """The indexing operation did not finish in time (it may still complete later)."""
+
+
+def _retriable_upload_error(exc: genai_errors.APIError) -> bool:
+    """Server errors and 429 are retried once; other 4xx answers can never succeed."""
+    return not isinstance(exc, genai_errors.ClientError) or exc.code in (408, 429)
+
+
 class FileSearchBackend:
     name: BackendName = "file_search"
+    needs_store = True
 
     def __init__(self) -> None:
         self._pages: OrderedDict[str, PageIndex | None] = OrderedDict()
@@ -186,24 +209,30 @@ class FileSearchBackend:
 
     async def _upload_once(self, store: str, file: KnowledgeFileDoc, data: bytes) -> str:
         client = get_client()
-        op = await client.aio.file_search_stores.upload_to_file_search_store(
-            file=io.BytesIO(data),
-            file_search_store_name=store,
-            config={
-                "display_name": display_name(file.file_id, file.filename),
-                "mime_type": file.mime,
-                "chunking_config": {
-                    "white_space_config": {
-                        "max_tokens_per_chunk": CHUNK_TOKENS,
-                        "max_overlap_tokens": CHUNK_OVERLAP_TOKENS,
-                    }
+        path = await asyncio.to_thread(_write_temp, data, PurePosixPath(file.filename).suffix.lower())
+        try:
+            op = await client.aio.file_search_stores.upload_to_file_search_store(
+                file=path,  # no mime_type: the API rejects it for csv/docx; the SDK guesses it
+                file_search_store_name=store,
+                config={
+                    "display_name": display_name(file.file_id, file.filename),
+                    "chunking_config": {
+                        "white_space_config": {
+                            "max_tokens_per_chunk": CHUNK_TOKENS,
+                            "max_overlap_tokens": CHUNK_OVERLAP_TOKENS,
+                        }
+                    },
                 },
-            },
-        )
+            )
+        finally:
+            try:
+                os.unlink(path)
+            except OSError:
+                log.warning("file_search_tmp_unlink_failed path=%s", path)
         deadline = time.monotonic() + UPLOAD_TIMEOUT_S
         while not op.done:
             if time.monotonic() > deadline:
-                raise IndexingError(f"indexing timed out after {UPLOAD_TIMEOUT_S:.0f}s")
+                raise UploadTimeout(f"indexing timed out after {UPLOAD_TIMEOUT_S:.0f}s")
             await asyncio.sleep(POLL_INTERVAL_S)
             op = await client.aio.operations.get(op)
         if op.error:
@@ -224,12 +253,14 @@ class FileSearchBackend:
             try:
                 document_name = await self._upload_once(store, file, data)
                 break
+            except UploadTimeout:
+                raise  # the operation may still complete: a second upload could duplicate the document
             except IndexingError as exc:
                 if exc.user_message == NOT_CONFIGURED_ERROR or attempt == 2:
                     raise
                 reason = str(exc)
             except genai_errors.APIError as exc:
-                if attempt == 2:
+                if attempt == 2 or not _retriable_upload_error(exc):
                     raise IndexingError(f"upload failed: {exc.code} {exc.status}") from exc
                 reason = f"{exc.code} {exc.status}"
             log.warning("file_search_upload_retry file_id=%s reason=%s", file.file_id, reason)
@@ -238,16 +269,38 @@ class FileSearchBackend:
         return IngestResult(pages=text.page_count, fs_document_name=document_name)
 
     async def delete(self, agent_id: str, store: str | None, file: KnowledgeFileDoc) -> None:
+        """Remove the file's document. Raises when that fails, so the caller keeps the reference.
+
+        Also removes, best effort, any other document of the file (``{file_id}__`` display name) that a
+        timed-out or failed upload may have left behind without a recorded ``fs_document_name``.
+        """
         self._pages.pop(file.file_id, None)
-        if not file.fs_document_name:
-            return
+        if file.fs_document_name:
+            await self._delete_document(file.fs_document_name)
+        if store and self.owns(store):
+            await self._delete_leftovers(store, file)
+
+    async def _delete_document(self, name: str) -> None:
         try:
-            await get_client().aio.file_search_stores.documents.delete(
-                name=file.fs_document_name, config={"force": True}
-            )
+            await get_client().aio.file_search_stores.documents.delete(name=name, config={"force": True})
         except genai_errors.APIError as exc:
             if exc.code != 404:
                 raise
+
+    async def _delete_leftovers(self, store: str, file: KnowledgeFileDoc) -> None:
+        prefix = display_name(file.file_id, "")
+        try:
+            pager = await get_client().aio.file_search_stores.documents.list(parent=store)
+            names = [
+                d.name
+                async for d in pager
+                if d.name and d.name != file.fs_document_name and (d.display_name or "").startswith(prefix)
+            ]
+            for name in names:
+                await self._delete_document(name)
+                log.info("file_search_leftover_deleted file_id=%s document=%s", file.file_id, name)
+        except Exception:
+            log.warning("file_search_leftover_cleanup_failed file_id=%s", file.file_id, exc_info=True)
 
     async def _page_index(self, agent_id: str, file_id: str) -> PageIndex | None:
         if file_id in self._pages:
