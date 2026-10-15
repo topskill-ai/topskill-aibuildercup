@@ -44,6 +44,7 @@ async def test_card_shape(client) -> None:
     assert ext["params"]["jwks_url"] == "http://127.0.0.1:8000/.well-known/jwks.json"
     assert ext["params"]["mandate_endpoint"] == "http://127.0.0.1:8000/api/mandates"
     assert card_price_cents(card) == 250
+    assert type(ext["params"]["price_cents"]) is int  # integer cents on the wire, not 250.0
     [skill] = card["skills"]
     assert skill["id"] == agent.slug and skill["tags"] == ["Visa routes", "topskill"]
     assert skill["examples"] == ["I am from Brazil. Which visa fits me?"]

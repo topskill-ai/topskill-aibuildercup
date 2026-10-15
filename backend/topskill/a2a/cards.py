@@ -99,8 +99,16 @@ def build_card(agent: AgentDoc, version: AgentVersion) -> AgentCard:
 
 
 def card_to_dict(card: AgentCard) -> dict:
-    """Wire JSON of a card (a2a-sdk helper)."""
-    return agent_card_to_dict(card)
+    """Wire JSON of a card (a2a-sdk helper). Extension params are a protobuf ``Struct``, which stores
+    every number as a double; ``price_cents`` is turned back into an integer (money is integer cents)."""
+    out = agent_card_to_dict(card)
+    for ext in (out.get("capabilities") or {}).get("extensions") or []:
+        params = ext.get("params")
+        if isinstance(params, dict):
+            price = params.get("price_cents")
+            if isinstance(price, float) and price.is_integer():
+                params["price_cents"] = int(price)
+    return out
 
 
 def card_price_cents(card: dict) -> int | None:
