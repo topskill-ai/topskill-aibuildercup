@@ -355,6 +355,24 @@ async def test_new_version_revalidates_skill_ownership(client: httpx.AsyncClient
     assert stored is not None and stored.version_count == 1
 
 
+async def test_new_version_uses_skills_stored_at_build_time(client: httpx.AsyncClient, fake_billing) -> None:
+    """A PATCH of ``config.skill_ids`` racing ``POST /versions`` never yields a version with stale skills."""
+    from topskill.agents import service
+    from topskill.auth import CurrentUser
+
+    uid, headers = creator()
+    agent = await publish(client, headers)
+    stale = await get_agent(agent["id"])
+    other = await make_skill(uid)
+    await get_db().collection(Col.AGENTS).document(agent["id"]).update({"config.skill_ids": [other.skill_id]})
+    user = CurrentUser(uid=uid, email=None, display_name="Creator", role="creator")
+    assert stale is not None
+    updated = await service.create_version(stale, user, "race")
+    assert updated.active_version == 2
+    version = await get_version(agent["id"], 2)
+    assert version is not None and [s.skill_id for s in version.skills] == [other.skill_id]
+
+
 async def test_patch_record_schema(client: httpx.AsyncClient, fake_billing) -> None:
     _, headers = creator()
     agent = await publish(client, headers)

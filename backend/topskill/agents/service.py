@@ -277,11 +277,36 @@ async def _publish_tx(db: firestore.AsyncClient, agent: AgentDoc, version: Agent
 async def create_version(agent: AgentDoc, user: CurrentUser, note: str) -> AgentDoc:
     """Rebuild a version from the current config (skills re-validated as owned), activate it,
     ``status=active``, ``config_dirty=false``."""
-    refs = await load_skill_refs(user.uid, list(agent.config.skill_ids))
     knowledge_ids = await ready_knowledge_ids(agent.id)
     db = get_db()
     agent_ref = db.collection(Col.AGENTS).document(agent.id)
+    skill_ids = list(agent.config.skill_ids)
+    for _ in range(3):
+        refs = await load_skill_refs(user.uid, skill_ids)
+        try:
+            updated = await _version_tx(db, agent_ref, user, refs, note, knowledge_ids)
+        except _SkillsChanged as changed:
+            skill_ids = changed.skill_ids  # a concurrent PATCH changed the skills: validate those instead
+            continue
+        log.info("agent_version_created agent_id=%s n=%d", agent.id, updated.active_version)
+        return updated
+    raise ApiError(503, Codes.SERVICE_UNAVAILABLE, "The agent is being edited. Please try again.")
 
+
+class _SkillsChanged(Exception):
+    def __init__(self, skill_ids: list[str]) -> None:
+        super().__init__("skills changed")
+        self.skill_ids = skill_ids
+
+
+async def _version_tx(
+    db: firestore.AsyncClient,
+    agent_ref: Any,
+    user: CurrentUser,
+    refs: list[SkillRef],
+    note: str,
+    knowledge_ids: list[str],
+) -> AgentDoc:
     @firestore.async_transactional
     async def _tx(tx: Any) -> AgentDoc:
         snap = await agent_ref.get(transaction=tx)
@@ -290,8 +315,10 @@ async def create_version(agent: AgentDoc, user: CurrentUser, note: str) -> Agent
         current = AgentDoc.model_validate(snap.to_dict())
         if current.deleted or current.owner_uid != user.uid:
             raise ApiError(404, Codes.AGENT_NOT_FOUND, "This agent does not exist.")
+        if list(current.config.skill_ids) != [r.skill_id for r in refs]:
+            raise _SkillsChanged(list(current.config.skill_ids))
         n = current.version_count + 1
-        # Skills are the ones validated above for this request's config (re-validated as owned).
+        # Skills were re-validated as owned for exactly this config (SPEC §8.8).
         version = build_version(current, n, refs, user.uid, note.strip(), knowledge_ids)
         now = utcnow()
         updates = {
@@ -305,9 +332,7 @@ async def create_version(agent: AgentDoc, user: CurrentUser, note: str) -> Agent
         tx.update(agent_ref, updates)
         return current.model_copy(update=updates)
 
-    updated = await _tx(db.transaction())
-    log.info("agent_version_created agent_id=%s n=%d", agent.id, updated.active_version)
-    return updated
+    return await _tx(db.transaction())
 
 
 async def list_versions(agent: AgentDoc) -> list[dict]:
