@@ -65,7 +65,7 @@ Error paths to spot-check once: visitor with 0.40 credits → Paywall dialog (`v
 
 ## 4. Prod checks after every deploy
 
-1. `deploy/scripts/deploy_backend.sh` checks `/healthz` reports the deployed sha.
+1. `deploy/scripts/deploy_backend.sh` checks that the Ready revision serves `api:<sha>` with 100% traffic, that `/health` reports the sha (when the alias is present; `/healthz` is reserved by Cloud Run's front end and only reachable by the startup probe) and that `/api/public/meta` is 200.
 2. Smoke test — every list endpoint × every filter combination of SPEC §5.3 once, fails on any 5xx (missing index) or non-2xx on a MUST endpoint:
    ```bash
    SMOKE_EMAIL=<creator account> SMOKE_PASSWORD=<from your password manager> deploy/scripts/smoke_prod.sh

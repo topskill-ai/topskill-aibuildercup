@@ -5,7 +5,7 @@ Turn any expert's skill into a paid AI agent in 60 seconds — usable by people 
 Built for the Google Cloud AI Builder Cup 2026 (theme: Future of Work & Enterprise Productivity) on Gemini, Agent Development Kit, Cloud Run, Firestore and Firebase.
 
 - Web app: https://top-skill.web.app
-- API: https://topskill-api-920441209758.asia-southeast1.run.app (`/healthz`, Agent Cards at `/a2a/{slug}/.well-known/agent-card.json`)
+- API: https://topskill-api-920441209758.asia-southeast1.run.app (`/health`, Agent Cards at `/a2a/{slug}/.well-known/agent-card.json`)
 - Implementation spec: [`docs/SPEC.md`](docs/SPEC.md) · E2E checklist: [`docs/E2E.md`](docs/E2E.md) · Demo script: [`docs/DEMO.md`](docs/DEMO.md)
 
 ## What it does
@@ -112,10 +112,14 @@ Deploys run from a laptop with the owner's gcloud / firebase login (CI only runs
 ```bash
 deploy/scripts/provision.sh --yes        # idempotent: APIs, Artifact Registry, bucket, service accounts, IAM, secret
 firebase deploy --only firestore:rules,firestore:indexes --project top-skill
-deploy/scripts/deploy_backend.sh --smoke # Cloud Build -> Cloud Run topskill-api, /healthz check, smoke test
+deploy/scripts/deploy_backend.sh --smoke # Cloud Build -> Cloud Run topskill-api, revision + /health check, smoke test
 deploy/scripts/deploy_web.sh             # production build -> Firebase Hosting
-deploy/scripts/smoke_prod.sh             # every list endpoint × filter combination; fails on any 5xx
+deploy/scripts/smoke_prod.sh             # CORS, auth, every list endpoint × filter combination; fails on any 5xx
 ```
+
+Cloud Run's front end reserves URL paths ending in `z`: `/healthz` answers a Google 404 from outside and is
+used only by the in-container startup probe. Check liveness from outside with `/health` (or `/api/public/meta`).
+Until every domain router is merged, run the smoke test with `--allow-missing` (404 = "absent", 5xx still fails).
 
 | Piece | Where |
 |---|---|
