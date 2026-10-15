@@ -19,6 +19,8 @@ export interface RecordPage {
 
 export interface RecordDetail extends RecordRow {
   transcript: ChatMessage[];
+  /** True when the record holds personal data and `reveal_pii` was off (the transcript is then empty). */
+  transcript_hidden?: boolean;
 }
 
 const base = (agentId: string) => `/api/agents/${encodeURIComponent(agentId)}`;
@@ -68,6 +70,24 @@ export function patchRecord(
 
 export function batchFollow(agentId: string, ids: string[], follow_status: FollowStatus): Promise<{ updated: number }> {
   return api.post(`${base(agentId)}/records/follow`, { ids, follow_status });
+}
+
+/** `POST /records/follow` accepts at most this many ids per call (SPEC §6.4). */
+export const FOLLOW_BATCH_MAX = 200;
+
+/** Batch follow-up for any number of ids: posts chunks of 200 one after another and sums `updated`. */
+export async function batchFollowAll(
+  agentId: string,
+  ids: string[],
+  follow_status: FollowStatus,
+  post: typeof batchFollow = batchFollow,
+): Promise<{ updated: number }> {
+  let updated = 0;
+  for (let i = 0; i < ids.length; i += FOLLOW_BATCH_MAX) {
+    const r = await post(agentId, ids.slice(i, i + FOLLOW_BATCH_MAX), follow_status);
+    updated += r.updated;
+  }
+  return { updated };
 }
 
 export function exportRecordsCsv(agentId: string, slug: string): Promise<void> {

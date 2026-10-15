@@ -22,7 +22,7 @@ import { formatDateTime } from "@/lib/format";
 import { toast } from "@/lib/toast";
 import { FOLLOW_STATUS_LABELS, patchRecord, useRecordDetail } from "@/features/records/api";
 import { FollowBadge, StatusBadge } from "@/features/records/RecordsTab";
-import { formatRecordValue } from "@/features/records/schema";
+import { formatRecordValue, maskedKeys, PII_MASK } from "@/features/records/schema";
 import { useAgent } from "@/features/studio/api";
 
 function Transcript({ messages }: { messages: ChatMessage[] }) {
@@ -107,7 +107,11 @@ export default function RecordDetailPage() {
   const schema = handed?.schema ?? agent.data?.config.record_schema ?? null;
   const fields = schema?.fields ?? [];
   const detailMissing = isApiError(detail.error) && detail.error.status === 404 && detail.error.code !== "record_not_found";
-  const hasPii = fields.some((f) => f.pii);
+  // The server hides PII (and the transcript) even for keys a later schema retired or un-flagged,
+  // so the reveal toggle follows the data as well as the current schema.
+  const transcriptHidden = detail.data?.transcript_hidden === true;
+  const hasPii =
+    reveal || transcriptHidden || fields.some((f) => f.pii) || (row ? maskedKeys(row).length > 0 : false);
   const back = { to: `/studio/agents/${id}?tab=records`, label: agent.data?.title ? `${agent.data.title} · Records` : "Records" };
 
   if (!row) {
@@ -120,6 +124,15 @@ export default function RecordDetailPage() {
     );
   }
 
+  const toggleReveal = (
+    <Button
+      variant="outline"
+      icon={reveal ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      onClick={() => setReveal((r) => !r)}
+    >
+      {reveal ? "Hide personal data" : "Show personal data"}
+    </Button>
+  );
   const known = new Set(fields.map((f) => f.key));
   const retired = Object.keys(row.data).filter((k) => !known.has(k));
 
@@ -135,17 +148,7 @@ export default function RecordDetailPage() {
             <FollowBadge status={row.follow_status} />
           </span>
         }
-        actions={
-          hasPii && !detailMissing ? (
-            <Button
-              variant="outline"
-              icon={reveal ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              onClick={() => setReveal((r) => !r)}
-            >
-              {reveal ? "Hide personal data" : "Show personal data"}
-            </Button>
-          ) : null
-        }
+        actions={hasPii && !detailMissing ? toggleReveal : null}
       />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         <div className="min-w-0 space-y-6">
@@ -167,7 +170,7 @@ export default function RecordDetailPage() {
                       </div>
                       <div className="min-w-0 break-words">
                         {formatRecordValue(f, v)}
-                        {v?.evidence && v.evidence !== "•••" ? <div className="mt-0.5 text-[13px] text-subtle">“{v.evidence}”</div> : null}
+                        {v?.evidence && v.evidence !== PII_MASK ? <div className="mt-0.5 text-[13px] text-subtle">“{v.evidence}”</div> : null}
                       </div>
                     </div>
                   );
@@ -186,7 +189,12 @@ export default function RecordDetailPage() {
         <Card className="min-w-0">
           <CardHeader title="Transcript" />
           <CardBody>
-            {detail.data ? (
+            {detail.data && transcriptHidden ? (
+              <div className="flex flex-col items-start gap-3">
+                <p className="text-sm text-muted">Transcript hidden because it contains personal data.</p>
+                {toggleReveal}
+              </div>
+            ) : detail.data ? (
               <Transcript messages={detail.data.transcript} />
             ) : detail.isPending ? (
               <SkeletonRows rows={4} />

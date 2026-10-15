@@ -3,7 +3,7 @@
  * Records table (SPEC §5.2 RecordField, §10.3). Mirrors the server's validation so the form can
  * explain problems early; the server stays the source of truth.
  */
-import type { FieldType, RecordField, RecordOption, RecordSchema, RecordValue } from "@/api/types";
+import type { FieldType, RecordField, RecordOption, RecordRow, RecordSchema, RecordValue } from "@/api/types";
 
 export const RECORD_KEY_RE = /^[a-z][a-z0-9_]{0,39}$/;
 export const MAX_RECORD_FIELDS = 30;
@@ -46,6 +46,47 @@ export function keyFromLabel(label: string, taken: Iterable<string> = []): strin
     if (!used.has(candidate)) return candidate;
   }
   return base;
+}
+
+/**
+ * Options from the editor's "one per line" text. A line whose label already exists keeps that
+ * option's key. For a saved field (`stableByPosition`), a relabelled line also keeps the key of the
+ * option on the same line, so stored values ("germany") still resolve after "Germany" →
+ * "Germany (DE)". Only genuinely new lines get a fresh key derived from their label.
+ */
+export function optionsFromLines(text: string, prev: RecordOption[], stableByPosition: boolean): RecordOption[] {
+  const labels = text
+    .split("\n")
+    .map((l) => l.trim().slice(0, MAX_RECORD_LABEL))
+    .filter(Boolean)
+    .slice(0, MAX_RECORD_OPTIONS);
+  const keys: (string | null)[] = labels.map(() => null);
+  const used = new Set<string>();
+  labels.forEach((label, i) => {
+    const same = prev.find((o) => o.label === label && !used.has(o.key));
+    if (same) {
+      keys[i] = same.key;
+      used.add(same.key);
+    }
+  });
+  if (stableByPosition) {
+    labels.forEach((_, i) => {
+      const at = prev[i];
+      if (keys[i] === null && at && !used.has(at.key) && !labels.includes(at.label)) {
+        keys[i] = at.key;
+        used.add(at.key);
+      }
+    });
+  }
+  const reserved = new Set([...used, ...prev.map((o) => o.key)]);
+  return labels.map((label, i) => {
+    let key = keys[i];
+    if (key === null) {
+      key = keyFromLabel(label, reserved);
+      reserved.add(key);
+    }
+    return { key, label };
+  });
 }
 
 export function newRecordField(existing: RecordField[]): RecordField {
@@ -124,6 +165,30 @@ export function tableColumns(schema: RecordSchema | null | undefined): RecordFie
   const fields = schema?.fields ?? [];
   const marked = fields.filter((f) => f.show_in_table);
   return marked.length > 0 ? marked : fields.slice(0, 3);
+}
+
+/** What the server sends in place of a personal-data value (and its evidence) unless revealed. */
+export const PII_MASK = "•••";
+
+/** Keys whose value arrived masked, including keys a later schema retired or un-flagged. */
+export function maskedKeys(row: Pick<RecordRow, "data">): string[] {
+  return Object.entries(row.data)
+    .filter(([, v]) => v?.value === PII_MASK)
+    .map(([k]) => k);
+}
+
+/**
+ * Labels of the personal-data fields a set of rows may hold: the current schema's `pii` fields plus
+ * any masked key the schema no longer flags (stored values keep the PII flag they were written with).
+ */
+export function personalDataLabels(schema: RecordSchema | null | undefined, rows: Pick<RecordRow, "data">[]): string[] {
+  const fields = schema?.fields ?? [];
+  const labels = fields.filter((f) => f.pii).map((f) => f.label);
+  const flagged = new Set(fields.filter((f) => f.pii).map((f) => f.key));
+  const extra = new Set<string>();
+  for (const r of rows) for (const k of maskedKeys(r)) if (!flagged.has(k)) extra.add(k);
+  for (const k of extra) labels.push(fields.find((f) => f.key === k)?.label ?? `${k} (retired)`);
+  return labels;
 }
 
 /** Display text for a stored record value. */

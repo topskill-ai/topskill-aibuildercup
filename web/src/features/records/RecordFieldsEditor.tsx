@@ -18,6 +18,7 @@ import {
   isChoiceType,
   keyFromLabel,
   newRecordField,
+  optionsFromLines,
   validateRecordFields,
 } from "./schema";
 
@@ -31,10 +32,13 @@ function OptionsEditor({
   field,
   onChange,
   disabled,
+  stableKeys,
 }: {
   field: RecordField;
   onChange: (patch: Partial<RecordField>) => void;
   disabled?: boolean;
+  /** Saved field: relabelled options keep their key so stored values still resolve. */
+  stableKeys: boolean;
 }) {
   const opts = field.options ?? [];
   const text = opts.map((o) => o.label).join("\n");
@@ -46,21 +50,7 @@ function OptionsEditor({
           rows={Math.min(6, Math.max(2, opts.length + 1))}
           disabled={disabled}
           defaultValue={text}
-          onBlur={(e) => {
-            const labels = e.target.value
-              .split("\n")
-              .map((l) => l.trim())
-              .filter(Boolean)
-              .slice(0, 30);
-            const taken: string[] = [];
-            const options = labels.map((label) => {
-              const existing = opts.find((o) => o.label === label);
-              const key = existing && !taken.includes(existing.key) ? existing.key : keyFromLabel(label, taken);
-              taken.push(key);
-              return { key, label: label.slice(0, 40) };
-            });
-            onChange({ options });
-          }}
+          onBlur={(e) => onChange({ options: optionsFromLines(e.target.value, opts, stableKeys) })}
           className="block w-full min-w-0 rounded-control border border-border bg-surface px-3 py-2 text-[15px] leading-6 focus:border-primary focus:outline-none focus:ring-3 focus:ring-primary/15"
         />
       )}
@@ -178,6 +168,7 @@ export function RecordFieldsEditor({
                     key={`${i}:${f.type}`}
                     field={f}
                     disabled={disabled}
+                    stableKeys={lockedKeys.includes(f.key)}
                     onChange={(patch) => set(i, patch)}
                   />
                 ) : null}

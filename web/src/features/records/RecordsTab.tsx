@@ -5,7 +5,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, ClipboardList, Download, Eye, EyeOff, ShieldAlert } from "lucide-react";
 import { useState } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import type { Agent, FollowStatus, RecordField, RecordRow, RecordSchema } from "@/api/types";
 import { Badge, type BadgeVariant } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -18,8 +18,8 @@ import { SkeletonRows } from "@/components/ui/Skeleton";
 import { cn } from "@/lib/cn";
 import { formatRelative } from "@/lib/format";
 import { toast, toastApiError } from "@/lib/toast";
-import { batchFollow, exportRecordsCsv, FOLLOW_STATUS_LABELS, useRecords, type RecordFilters } from "./api";
-import { formatRecordValue, tableColumns } from "./schema";
+import { batchFollowAll, exportRecordsCsv, FOLLOW_STATUS_LABELS, useRecords, type RecordFilters } from "./api";
+import { formatRecordValue, personalDataLabels, tableColumns } from "./schema";
 
 const FOLLOW_VARIANT: Record<FollowStatus, BadgeVariant> = {
   new: "primary",
@@ -70,7 +70,14 @@ export function RecordsTab({ agent, onOpenSettings }: { agent: Agent; onOpenSett
   const schema: RecordSchema | null = q.data?.pages[0]?.schema ?? agent.config.record_schema ?? null;
   const rows = q.data?.pages.flatMap((p) => p.items) ?? [];
   const columns = tableColumns(schema);
-  const hasPii = (schema?.fields ?? []).some((f) => f.pii);
+  // Personal data follows the stored values too (a retired or un-flagged key stays masked and is
+  // still exported), so labels seen while masked are remembered after "Show personal data".
+  const [seen, setSeen] = useState<{ agentId: string; labels: string[] }>({ agentId: agent.id, labels: [] });
+  const seenPii = seen.agentId === agent.id ? seen.labels : [];
+  const newPii = personalDataLabels(schema, rows).filter((l) => !seenPii.includes(l));
+  if (newPii.length > 0 || seen.agentId !== agent.id) setSeen({ agentId: agent.id, labels: [...seenPii, ...newPii] });
+  const piiLabels = [...seenPii, ...newPii];
+  const hasPii = piiLabels.length > 0 || Boolean(filters.reveal_pii);
   const filtered = Boolean(filters.status || filters.follow_status);
 
   const exportCsv = useMutation({
@@ -79,7 +86,7 @@ export function RecordsTab({ agent, onOpenSettings }: { agent: Agent; onOpenSett
     onError: (err) => toastApiError(err, "Could not export the CSV"),
   });
   const follow = useMutation({
-    mutationFn: () => batchFollow(agent.id, [...selected], batchStatus),
+    mutationFn: () => batchFollowAll(agent.id, [...selected], batchStatus),
     onSuccess: (r) => {
       toast.success(`${r.updated} record${r.updated === 1 ? "" : "s"} marked “${FOLLOW_STATUS_LABELS[batchStatus]}”`);
       setSelected(new Set());
@@ -96,8 +103,8 @@ export function RecordsTab({ agent, onOpenSettings }: { agent: Agent; onOpenSett
       return n;
     });
   const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
-  const open = (row: RecordRow) =>
-    navigate(`/studio/agents/${agent.id}/records/${encodeURIComponent(row.id)}`, { state: { row, schema } });
+  const detailPath = (row: RecordRow) => `/studio/agents/${agent.id}/records/${encodeURIComponent(row.id)}`;
+  const open = (row: RecordRow) => navigate(detailPath(row), { state: { row, schema } });
 
   return (
     <div className="space-y-4">
@@ -239,7 +246,14 @@ export function RecordsTab({ agent, onOpenSettings }: { agent: Agent; onOpenSett
                         />
                       </td>
                       <td className="px-3 py-3">
-                        <span className="block max-w-[180px] truncate font-medium">{r.visitor_name || "Visitor"}</span>
+                        <Link
+                          to={detailPath(r)}
+                          state={{ row: r, schema }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="block max-w-[180px] truncate rounded-sm font-medium hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                        >
+                          {r.visitor_name || "Visitor"}
+                        </Link>
                         <span className="block max-w-[180px] truncate font-mono text-xs text-subtle">
                           {r.visitor_email_masked}
                         </span>
@@ -324,11 +338,7 @@ export function RecordsTab({ agent, onOpenSettings }: { agent: Agent; onOpenSett
         <div className="flex items-start gap-3 rounded-control bg-warning-soft p-3 text-sm text-warning">
           <ShieldAlert aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
-            Personal data fields:{" "}
-            {(schema?.fields ?? [])
-              .filter((f) => f.pii)
-              .map((f) => f.label)
-              .join(", ")}
+            Personal data fields: {piiLabels.length > 0 ? piiLabels.join(", ") : "values marked as personal data"}
           </span>
         </div>
       </Dialog>
