@@ -43,10 +43,10 @@ export function IncomeList({
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="truncate text-sm font-medium">{e.memo || e.agent_title || "Income"}</span>
+                <span className="min-w-0 break-words text-sm font-medium">{e.memo || e.agent_title || "Income"}</span>
                 <Badge variant={channel === "a2a" ? "outline" : "neutral"}>{channel === "a2a" ? "A2A call" : "Visitor round"}</Badge>
               </div>
-              <div className="mt-0.5 truncate text-[13px] text-muted">
+              <div className="mt-0.5 break-words text-[13px] text-muted">
                 {[
                   showAgent && e.agent_title && !e.memo.includes(e.agent_title) ? e.agent_title : null,
                   channel === "a2a" && e.counterparty_name ? `paid by ${e.counterparty_name}` : null,
