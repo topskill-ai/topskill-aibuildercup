@@ -28,7 +28,7 @@ import { Tooltip } from "@/components/ui/Tooltip";
 import { callErrorText, useNow } from "@/features/mandates/model";
 import { cn } from "@/lib/cn";
 import { formatCredits } from "@/lib/money";
-import { useAgentLook } from "./agentLookup";
+import { useAgentLook } from "@/features/mandates/agentLook";
 import { summarizeTurn, type CallItem, type DiscoverItem, type TimelineItem, type ToolItem, type Turn } from "./timeline";
 
 // ---------------------------------------------------------------------------------------------

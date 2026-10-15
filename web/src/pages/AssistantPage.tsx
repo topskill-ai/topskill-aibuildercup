@@ -187,7 +187,7 @@ export default function AssistantPage() {
             />
           </div>
         </div>
-        <aside id="mandate-panel" aria-label="Mandate and payments" className="min-w-0 space-y-4 lg:sticky lg:top-20 lg:self-start">
+        <aside id="mandate-panel" aria-label="Mandate and payments" className="min-w-0 space-y-4 lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6rem)] lg:self-start lg:overflow-y-auto lg:pb-2">
           <MandateCard
             active={a.active}
             counters={a.counters}

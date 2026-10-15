@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { queryKeys } from "@/api/queryClient";
 import type { AccentColor, PublicAgent } from "@/api/types";
-import { accentForSlug } from "@/features/mandates/accent";
+import { accentForSlug } from "./accent";
 
 export interface AgentLook {
   avatarUrl: string | null;

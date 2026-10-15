@@ -6,7 +6,7 @@ import { Money } from "@/components/ui/Money";
 import { SkeletonRows } from "@/components/ui/Skeleton";
 import { cn } from "@/lib/cn";
 import { formatRelative, truncate } from "@/lib/format";
-import { accentForSlug } from "./accent";
+import { useAgentLook } from "./agentLook";
 import { isMissingEndpoint, useMandateCalls } from "./api";
 
 function StatusIcon({ status }: { status: A2ACall["status"] }) {
@@ -16,9 +16,10 @@ function StatusIcon({ status }: { status: A2ACall["status"] }) {
 }
 
 export function A2ACallRow({ call }: { call: A2ACall }) {
+  const look = useAgentLook(call.agent_slug);
   return (
     <li className="flex items-start gap-3 py-2.5">
-      <Avatar name={call.agent_title || call.agent_slug} accent={accentForSlug(call.agent_slug)} size={28} />
+      <Avatar src={look.avatarUrl} name={call.agent_title || call.agent_slug} accent={look.accent} size={28} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
           <span className="flex min-w-0 items-center gap-1.5 font-medium">
