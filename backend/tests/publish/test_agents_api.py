@@ -116,8 +116,6 @@ async def test_publish_creates_agent_version_slug_stats(client: httpx.AsyncClien
 
 
 async def test_publish_opens_real_wallet_when_billing_exists(client: httpx.AsyncClient) -> None:
-    if getattr(deps.billing(), "is_stub", False):
-        pytest.skip("billing package not merged yet (stub in use)")
     uid, headers = creator()
     await publish(client, headers)
     wallet = await get_db().collection(Col.WALLETS).document(uid).get()

@@ -1,6 +1,5 @@
 """Paid A2A calls settled by the real ``topskill.billing`` package (T3 with ledger rows) instead of the
-test double. Skipped until the billing lane is merged; after integration it proves the a2a ↔ billing
-contract end to end: charged once on success, nothing charged and the reservation released on failure."""
+test double. It proves the a2a ↔ billing contract end to end: charged once on success, nothing charged and the reservation released on failure."""
 
 from __future__ import annotations
 
@@ -22,12 +21,7 @@ from topskill.a2a.assistant import a2a_error_code, extract_result
 from topskill.db import Col, get_db
 from topskill.testing.factories import make_agent, make_user, open_wallet, unique
 
-pytestmark = [
-    pytest.mark.emulator,
-    pytest.mark.skipif(
-        importlib.util.find_spec("topskill.billing") is None, reason="billing lane not merged"
-    ),
-]
+pytestmark = pytest.mark.emulator
 
 
 @dataclass(frozen=True)

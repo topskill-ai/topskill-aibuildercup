@@ -6,7 +6,6 @@ import asyncio
 import importlib
 import logging
 import os
-import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -14,7 +13,15 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from topskill import tasks
+from topskill.a2a.mandate_router import router as mandate_router
+from topskill.a2a.router import router as a2a_router
+from topskill.agents.public_router import router as agents_public_router
+from topskill.agents.router import router as agents_router
 from topskill.auth import init_firebase
+from topskill.billing.router import public_router as billing_public_router
+from topskill.billing.router import router as billing_router
+from topskill.chat.router import public_router as chat_public_router
+from topskill.chat.router import router as chat_router
 from topskill.config import assert_safe_runtime, get_settings
 from topskill.db import get_db
 from topskill.errors import (
@@ -23,45 +30,31 @@ from topskill.errors import (
     configure_logging,
     install_error_handlers,
 )
+from topskill.knowledge import sweep_stale_all
+from topskill.knowledge.router import router as knowledge_router
+from topskill.meta_router import router as meta_router
+from topskill.records.router import router as records_router
+from topskill.skills.router import router as skills_router
+from topskill.users.router import router as users_router
 
 log = logging.getLogger(__name__)
 
-# (module, attribute, prefix) – fixed import names (SPEC §3.2). Order matters only for path precedence.
-ROUTERS: tuple[tuple[str, str, str], ...] = (
-    ("topskill.users.router", "router", "/api"),
-    ("topskill.meta_router", "router", "/api/public"),
-    ("topskill.skills.router", "router", "/api"),
-    ("topskill.agents.router", "router", "/api"),
-    ("topskill.agents.public_router", "router", "/api/public"),
-    ("topskill.billing.router", "router", "/api"),
-    ("topskill.billing.router", "public_router", "/api/public"),
-    ("topskill.knowledge.router", "router", "/api"),
-    ("topskill.records.router", "router", "/api"),
-    ("topskill.chat.router", "public_router", "/api/public"),
-    ("topskill.chat.router", "router", "/api"),
-    ("topskill.a2a.mandate_router", "router", ""),
-    ("topskill.a2a.router", "router", ""),
+# (router, prefix, name) – fixed import names (SPEC §3.2). Order matters only for path precedence.
+ROUTERS: tuple[tuple[APIRouter, str, str], ...] = (
+    (users_router, "/api", "topskill.users.router:router"),
+    (meta_router, "/api/public", "topskill.meta_router:router"),
+    (skills_router, "/api", "topskill.skills.router:router"),
+    (agents_router, "/api", "topskill.agents.router:router"),
+    (agents_public_router, "/api/public", "topskill.agents.public_router:router"),
+    (billing_router, "/api", "topskill.billing.router:router"),
+    (billing_public_router, "/api/public", "topskill.billing.router:public_router"),
+    (knowledge_router, "/api", "topskill.knowledge.router:router"),
+    (records_router, "/api", "topskill.records.router:router"),
+    (chat_public_router, "/api/public", "topskill.chat.router:public_router"),
+    (chat_router, "/api", "topskill.chat.router:router"),
+    (mandate_router, "", "topskill.a2a.mandate_router:router"),
+    (a2a_router, "", "topskill.a2a.router:router"),
 )
-CORE_ROUTER_MODULES = frozenset({"topskill.users.router", "topskill.meta_router"})
-
-
-def _load_router(module_name: str, attr: str) -> APIRouter | None:
-    """Guarded import while lanes land (SPEC §3.1): a missing domain package logs a warning."""
-    try:
-        module = importlib.import_module(module_name)
-    except ImportError as exc:
-        if module_name in CORE_ROUTER_MODULES:
-            raise
-        missing = getattr(exc, "name", None) or ""
-        if missing and module_name.startswith(missing):
-            log.warning("router_not_available module=%s (package not built yet)", module_name)
-        else:
-            log.warning("router_import_failed module=%s error=%r", module_name, exc)
-        return None
-    router = getattr(module, attr, None)
-    if router is None:
-        log.warning("router_attribute_missing module=%s attr=%s", module_name, attr)
-    return router
 
 
 def mounted_routers(app: FastAPI) -> list[str]:
@@ -79,6 +72,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     get_db()
     init_firebase()
     tasks.spawn(_warm_import_adk(), name="warm-import:google.adk")
+    tasks.spawn(sweep_stale_all(), name="knowledge:startup-sweep")  # never raises (SPEC §10.1)
     log.info("startup env=%s version=%s routers=%s", settings.env, settings.app_version, mounted_routers(app))
     try:
         yield
@@ -124,18 +118,14 @@ def create_app() -> FastAPI:
         return {"ok": True, "env": settings.env, "version": settings.app_version}
 
     app.get("/healthz", tags=["health"])(healthz)
+    # Cloud Run's front end answers paths ending in "z" itself, so /healthz is only reachable from inside
+    # the container (startup probe). /health is the same handler for external checks.
+    app.get("/health", tags=["health"], include_in_schema=False)(healthz)
 
     mounted: list[str] = []
-    unavailable: set[str] = set()
-    for module_name, attr, prefix in ROUTERS:
-        if module_name in unavailable:
-            continue
-        router = _load_router(module_name, attr)
-        if router is None and module_name not in sys.modules:
-            unavailable.add(module_name)
-        if router is not None:
-            app.include_router(router, prefix=prefix)
-            mounted.append(f"{module_name}:{attr}")
+    for router, prefix, name in ROUTERS:
+        app.include_router(router, prefix=prefix)
+        mounted.append(name)
     app.state.mounted_routers = mounted
     return app
 

@@ -85,8 +85,20 @@ describe("Markdown citation markers", () => {
 describe("helpers", () => {
   it("splits text around valid markers only", () => {
     const parts = splitCitationText("a [1] b [9] c [2]", new Set([1, 2]));
-    expect(parts.map((p) => p.type)).toEqual(["text", "citationRef", "text", "citationRef"]);
-    expect(parts[2].value).toBe(" b [9] c ");
+    expect(parts.map((p) => p.type)).toEqual(["text", "citationGroup", "text", "citationGroup"]);
+    expect(parts[0].value).toBe("a");
+    expect(parts[2].value).toBe(" b [9] c");
+  });
+
+  it("keeps a marker on one line with the punctuation after it", () => {
+    const parts = splitCitationText("covered on two pages [1]. Next [2], end", new Set([1, 2]));
+    expect(parts.map((p) => p.type)).toEqual(["text", "citationGroup", "text", "citationGroup", "text"]);
+    expect(parts[0].value).toBe("covered on two pages");
+    expect(parts[1].children?.map((c) => c.type)).toEqual(["citationRef", "text"]);
+    expect(parts[1].children?.[1].value).toBe(".");
+    expect(parts[1].data?.hProperties).toEqual({ className: ["whitespace-nowrap"] });
+    expect(parts[3].children?.[1].value).toBe(",");
+    expect(parts[4].value).toBe(" end");
   });
 
   it("labels page ranges", () => {

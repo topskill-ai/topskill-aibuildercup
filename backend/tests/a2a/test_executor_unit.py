@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.util
-
 import httpx
 import pytest
 from a2a.server.agent_execution import RequestContext
@@ -106,11 +104,9 @@ def test_extract_result_shapes() -> None:
     assert extract_result([{"message": {"parts": [{"text": "direct"}]}}]) == ("message", "direct")
 
 
-@pytest.mark.skipif(importlib.util.find_spec("topskill.chat") is None, reason="chat lane not merged yet")
 @pytest.mark.emulator
 async def test_a2a_runtime_agent_uses_portable_thinking_budget() -> None:
     from topskill.chat import build_runtime_agent
-
     from topskill.repo import get_active_version
     from topskill.testing.factories import make_agent, make_user
 

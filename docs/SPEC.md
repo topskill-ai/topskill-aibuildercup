@@ -240,6 +240,7 @@ topskill/
 - Dependency direction: `billing`, `knowledge`, `records` → `core`; `publish` → `billing` (`get_or_open_wallet`), `records` (`validate_schema`, `assert_schema_change_allowed`), `core`; `chat` → `billing`, `knowledge`, `records`, `publish`, `core`; `a2a` → `chat`, `billing`, `knowledge`, `core`.
 - `chat` and `a2a` reach billing/knowledge/records **only through `chat/deps.py: get_deps() -> Deps`** (a2a calls `topskill.chat.get_deps`). That one function imports each real package and falls back to `topskill.testing.stubs` on `ImportError` (logging a warning). Swapping stubs for real modules is therefore automatic; on 2026-10-17 the fallback branch is deleted in that single file.
 - Routers are registered only in `core/main.py`. Each package exposes `router` (and `public_router` where listed) from its `router.py`; `main.py` imports them by the fixed names in §3.2. Until a package exists, `main.py` wraps each import in a guarded `try/except ImportError` that logs a warning (so the app runs with partial modules during the build); remove the guards on 2026-10-17 once all modules land.
+- Firestore aggregation queries (`sum`/`count`/`avg`) are not used: they need the aggregated field in a composite index. Sum in memory over a bounded query instead.
 - Every Firestore query in the code MUST be (a) backed by an index in §5.3, (b) a single-field equality/range query, or (c) explicitly marked "in memory" in this spec. The emulator does not enforce composite indexes, so reviewers check this rule by hand.
 - Background work (knowledge ingestion, record extraction, the chat producer, A2A settlement fallbacks) is started only via `topskill.tasks.spawn(coro, name=…)`, never bare `asyncio.create_task`.
 
@@ -259,6 +260,8 @@ def create_app() -> FastAPI:
                        "X-AP2-Mandate","A2A-Version","X-Request-Id"],
         expose_headers=["X-Trace-Id","Content-Disposition"], allow_credentials=False, max_age=3600)
     app.get("/healthz")(healthz)         # {"ok": true, "env": ..., "version": ...}; no Firestore call
+    app.get("/health", include_in_schema=False)(healthz)  # external alias: Cloud Run's front end answers
+                                         # paths ending in "z" itself, so /healthz works only from inside
     # Routers (fixed import names):
     #   topskill.users.router:router                 prefix /api
     #   topskill.meta_router:router                  prefix /api/public
@@ -477,12 +480,12 @@ Only ever written with `firestore.Increment` / `set(merge=True)` (no read needed
   "status": "processing",       // "processing" | "ready" | "failed" | "unreadable"
   "error": null,                 // user-safe message when failed
   "pages": 3,                    // null if unknown
-  "backend": "rag_engine",       // "rag_engine" | "local"
-  "rag_file_name": null,         // "projects/…/ragCorpora/…/ragFiles/…" when rag_engine
+  "backend": "file_search",      // "file_search" | "local"
+  "fs_document_name": null,      // "fileSearchStores/…/documents/…" when file_search (D1)
   "chunks": null,                // int, local backend
   "created_at": <ts>, "updated_at": <ts> }
 ```
-Agent-level fields written by [knowledge]: `agents/{id}.knowledge_store` = RAG corpus resource name (or `"local"`), set by `knowledge.ensure_store` (write-once, §10.1); `agents/{id}.knowledge_rev` = `Increment(1)` on every file status change (→ ready/failed/unreadable) and every deletion (part of the A2A stack cache key, §9.1). Neither touches `updated_at`.
+Internal blob: `knowledge/{agent_id}/{file_id}/pages.json` (extracted page texts, used to refine page spans). Agent-level fields written by [knowledge]: `agents/{id}.knowledge_store` = File Search store name, set by `knowledge.ensure_store` (write-once, §10.1). The local backend needs no store and never writes it, so the field stays null for local-only agents (a legacy `"local"` value counts as unset); never read it to decide whether an agent has knowledge (use `has_ready_files`); `agents/{id}.knowledge_rev` = `Increment(1)` on every file status change (→ ready/failed/unreadable) and every deletion (part of the A2A stack cache key, §9.1). Neither touches `updated_at`.
 
 #### `agents/{agent_id}/knowledge_chunks/{file_id}_{i:04d}` [knowledge] (local backend only)
 `{ "file_id", "filename", "i", "text" (≤1500 chars), "page_start", "page_end", "terms": {term: count} (lower-cased `\w+` terms minus stopwords, ≤300 entries) }`
@@ -732,7 +735,7 @@ class CitationCollector(Protocol):            # implemented by knowledge.citatio
 | `agents` | `owner_uid ASC, created_at DESC` | creator agent list (`deleted` filtered **in memory**, ≤ 100 per creator) |
 | `agents` | `listed ASC, status ASC, deleted ASC, created_at DESC` | marketplace, directory (`pricing.a2a_enabled` and `q` filtered **in memory** over ≤ 200 newest) |
 | `ledger` | `uid ASC, created_at DESC` | wallet ledger (no filter) |
-| `ledger` | `uid ASC, category ASC, created_at DESC` | ledger `?category=`; dashboard `category in [creator_income, a2a_income]` (recent income, today/7d sums) |
+| `ledger` | `uid ASC, category ASC, created_at DESC` | ledger `?category=`; dashboard `category in [creator_income, a2a_income]` ordered by `created_at DESC`, ≤ 5000 newest rows; all-time / today / 7d income summed **in memory** (no SUM aggregations: `amount_cents` is in no composite index) |
 | `ledger` | `uid ASC, agent_id ASC, created_at DESC` | ledger `?agent_id=`; agent earnings (owner's entries for their own agent are always income, so earnings filter by `uid` + `agent_id` only, never by category) |
 | `ledger` | `uid ASC, category ASC, agent_id ASC, created_at DESC` | ledger `?category=&agent_id=` together |
 | `conversations` | `agent_id ASC, updated_at DESC` | creator conversation list [SHOULD] |
@@ -743,7 +746,7 @@ class CitationCollector(Protocol):            # implemented by knowledge.citatio
 | `mandates` | `payer_uid ASC, issued_at DESC` | mandate list |
 | `a2a_calls` | `mandate_id ASC, created_at DESC` | mandate calls |
 | `a2a_calls` | `owner_uid ASC, created_at DESC` | creator A2A feed |
-Messages and knowledge sub-collections use single-field indexes only (order by `created_at`; `status ==` filters). `records.assert_schema_change_allowed` ("does any record of this agent have a value for key K") is a dynamic field path and cannot be indexed: it streams the single-field query `records where agent_id == X` with a projection on `data` **in memory** and stops at the first hit. Any query not in this table must be single-field or marked in memory (§3.1). The emulator does not enforce any of this; `deploy/scripts/smoke_prod.sh` hits every list endpoint with every filter combination once right after each prod deploy and fails on any 5xx (FAILED_PRECONDITION).
+Messages and knowledge sub-collections use single-field indexes only (order by `created_at`; `status ==` filters). The startup stale sweep queries the `knowledge` **collection group** on `status == "processing"`, which needs the single-field `fieldOverrides` entry for `knowledge.status` with `COLLECTION_GROUP` scope in `firestore.indexes.json`. `records.assert_schema_change_allowed` ("does any record of this agent have a value for key K") is a dynamic field path and cannot be indexed: it streams the single-field query `records where agent_id == X` with a projection on `data` **in memory** and stops at the first hit. Any query not in this table must be single-field or marked in memory (§3.1). The emulator does not enforce any of this; `deploy/scripts/smoke_prod.sh` hits every list endpoint with every filter combination once right after each prod deploy and fails on any 5xx (FAILED_PRECONDITION).
 
 ### 5.4 Transactions (who touches what)
 | # | Name | Owner | Reads (in tx) | Writes |
@@ -900,7 +903,7 @@ export type ToolKind = "search" | "web" | "skill" | "record" | "a2a" | "other";
 export interface ChatMessage { id: string; role: "user" | "model"; text: string;
   status: "ok" | "failed" | "aborted"; turn_id: string; citations: Citation[];
   search_entry_point_html: string | null; tools: ToolLine[];
-  charge: { charged_cents: number; free: boolean; round_index: number } | null; created_at: string }
+  charge: { charged_cents: number; free: boolean; round_index: number | null } | null; created_at: string }
 export interface ConversationOut { id: string; agent_slug: string; title: string; rounds_ok: number;
   created_at: string; updated_at: string; messages: ChatMessage[] }
 export interface ConversationSummary { id: string; visitor_name: string; title: string; rounds_ok: number;
@@ -992,7 +995,8 @@ Every endpoint is MUST unless its row is tagged **[SHOULD]**. A [SHOULD] endpoin
 #### Health & meta [core]
 | Method | Path | Auth | Response |
 |---|---|---|---|
-| GET | `/healthz` | public | `{"ok": true, "env": "prod", "version": "<sha>"}` (no I/O) |
+| GET | `/healthz` | public | `{"ok": true, "env": "prod", "version": "<sha>"}` (no I/O). Startup probe only: unreachable from outside on Cloud Run. |
+| GET | `/health` | public | same handler and body as `/healthz`; the external check used by `deploy_backend.sh` / `smoke_prod.sh` |
 | GET | `/api/public/meta` | public | `Meta` (§6.3) from settings: `chat_models` = `CHAT_MODEL_ALLOWLIST`, `default_chat_model` = `MODEL_CHAT`, `revenue_share_bp`, `signup_grant_cents`, `demo_topup_cents`, `demo_topup_daily_limit`, mandate defaults (5.00 / 20.00 / 30 min) and maxima. Web fetches it once in `AppShell` (query key `["meta"]`, `staleTime: Infinity`); no lane hardcodes these values. |
 
 #### Me [core]
@@ -1074,8 +1078,8 @@ interface UpdateAgentRequest {      // all optional; absent = unchanged
 | Method | Path | Auth | Request | Response | Errors |
 |---|---|---|---|---|---|
 | POST | `/api/agents/{agent_id}/knowledge` | owner | multipart `files` (1..3; the web client always sends **one file per request**) | 202 `{items: KnowledgeFile[]}` (status `processing`; ingestion runs in background via `tasks.spawn`) | 400 `unsupported_file_type`, 400 `knowledge_limit_reached`, 413 `payload_too_large` (> 10 MB/file or > 30 MB/request) |
-| GET | `/api/agents/{agent_id}/knowledge` | owner | – | `{items: KnowledgeFile[], backend: "rag_engine" \| "local"}` (UI polls every 3 s while any is processing). Before listing, files still `processing` with `updated_at` older than 10 min are marked `failed` with error "Processing was interrupted. Please re-upload." (also done once at startup), so polling always terminates. | 404 |
-| DELETE | `/api/agents/{agent_id}/knowledge/{file_id}` | owner | – | `{ok: true}` | 404 |
+| GET | `/api/agents/{agent_id}/knowledge` | owner | – | `{items: KnowledgeFile[], backend: "file_search" \| "local"}` (UI polls every 3 s while any is processing). Before listing, files still `processing` with `updated_at` older than 10 min are marked `failed` with error "Processing was interrupted. Please re-upload." (also done once at startup), so polling always terminates. | 404 |
+| DELETE | `/api/agents/{agent_id}/knowledge/{file_id}` | owner | – | `{ok: true}` | 404; 503 `service_unavailable` when index cleanup fails (the file stays, status `failed`, error "Deleting failed. Please try again."; retryable) |
 | POST | `/api/agents/{agent_id}/knowledge/search` | owner **[SHOULD]** | `{query: str(1..500)}` | `{items: Passage[]}` (test console) | 404 |
 Accepted: `.pdf .txt .md .csv .docx`; ≤ 10 MB/file; ≤ 20 files/agent.
 
@@ -1480,12 +1484,15 @@ The UI flow: the user types a task → the page asks to **authorise a budget** (
 ### 10.1 Knowledge [knowledge]
 - Backend interface (`knowledge/base.py`):
   ```python
-  class KnowledgeBackend(Protocol):
-      name: Literal["rag_engine", "local"]
-      async def ensure_store(self, agent_id: str) -> str
-      async def ingest(self, agent_id: str, file: KnowledgeFileDoc, data: bytes) -> IngestResult  # pages, rag_file_name|chunks
-      async def delete(self, agent_id: str, file: KnowledgeFileDoc) -> None
-      async def search(self, agent_id: str, query: str, top_k: int) -> list[Passage]
+  class KnowledgeBackend(Protocol):          # as built (revision 3)
+      name: Literal["file_search", "local"]
+      needs_store: bool                       # False for local: ensure_store writes nothing
+      def owns(self, file: KnowledgeFileDoc) -> bool
+      async def create_store(self, agent_id: str) -> str
+      async def delete_store(self, store: str) -> None
+      async def ingest(self, agent_id, store, file, data, text) -> IngestResult   # pages, fs_document_name|chunks
+      async def delete(self, agent_id, store, file) -> None
+      async def search(self, agent_id, store, query, top_k, rev) -> list[Passage]
   ```
 - **`ensure_store` must be race-free** (the wizard uploads several files back to back, each starting its own ingestion task): serialise per agent with an in-process `asyncio.Lock` keyed by `agent_id` (enough with one instance); inside the lock, re-read `agents/{id}.knowledge_store`; if null, create the corpus, then claim it with transaction T9 (write `knowledge_store` only if still null). If another writer won, delete the corpus just created and use the winner. This happens before any upload.
 - **`rag_engine`** (prod): one corpus per agent (`display_name = f"topskill-{agent_id}"`), name saved in `agents/{id}.knowledge_store`. `vertexai.init(project=GOOGLE_CLOUD_PROJECT, location=RAG_LOCATION, api_transport="rest")`; calls are sync → `asyncio.to_thread`. Upload (verified shape; `upload_file` takes a local **path**, not bytes): write the bytes to `tempfile.NamedTemporaryFile(suffix=<original extension>, delete=False)`, then `rag.upload_file(corpus_name=…, path=tmp.name, display_name=<file_id>__<filename>, transformation_config=rag.TransformationConfig(chunking_config=rag.ChunkingConfig(chunk_size=RAG_CHUNK_SIZE, chunk_overlap=RAG_CHUNK_OVERLAP)))`, delete the temp file in `finally`; retry once after 5 s on failure (first upload after corpus creation may return code 13). Store the returned `RagFile.name` as `rag_file_name`. Search via REST `POST https://{RAG_LOCATION}-aiplatform.googleapis.com/v1/projects/{p}/locations/{RAG_LOCATION}:retrieveContexts` with `vertex_rag_store.rag_resources=[{rag_corpus}]`, `rag_retrieval_config.top_k`, using `google.auth` ADC token + `httpx.AsyncClient`. The response nests the list as **`resp["contexts"]["contexts"]`**; map each `{sourceDisplayName, text, score, chunk.pageSpan.firstPage/lastPage}` → `Passage` (score is a distance; lower = better; keep order). `Passage.file_id` must be our `kf_` id: map `chunk.fileId` (the RAG file id) to our file via the last path segment of the stored `rag_file_name`, using a per-agent dict built from the knowledge subcollection (cached until `knowledge_rev` changes); fall back to the `kf_` prefix of `sourceDisplayName`; drop passages that map to no ready file. Delete via `rag.delete_file`.
@@ -1493,7 +1500,7 @@ The UI flow: the user types a task → the page asks to **authorise a budget** (
 - Ingestion pipeline (`knowledge.service.ingest_file`, started with `tasks.spawn(…, name=f"ingest:{file_id}")` — Cloud Run runs with `--no-cpu-throttling`): read original from storage → extract text to detect unreadable (no text → status `unreadable`, keep file, skip indexing) → `ensure_store` → `backend.ingest` → status `ready` (+ pages) or `failed` (+ user-safe error), each status change with `knowledge_rev` Increment on the agent. A revision rollout SIGTERMs the old instance after ~10 s, so files can be left `processing`; the 10-minute stale sweep (§6.4 GET knowledge, and once at startup) marks them `failed` with "Processing was interrupted. Please re-upload." The knowledge set applies **live**: search covers all `ready` files of the agent (no versioning — a deliberate simplification). Deleting a file removes it from the corpus/chunks immediately and bumps `knowledge_rev`.
 - `search_knowledge` tool (`knowledge/tool.py`): `make_search_tool(agent_id, collector) -> FunctionTool` wrapping `async def search_knowledge(query: str) -> dict`. Docstring (seen by the model): "Search the creator's reference documents. Use for any question that may be covered by them. Cite results inline as [n]." Returns `{"results": [{"ref": "[1]", "source": "visa_guide.pdf", "pages": "2", "text": "…≤1200 chars"}], "note": "Cite as [n]. If nothing relevant, say the documents don't cover it."}`. With a collector (web channel, one collector per turn), `n` comes from `collector.add_passages` (stable across searches in the turn); with `collector=None` (A2A, shared stack), passages are numbered `1..k` within each result. Registered only when the agent has ≥ 1 ready file (web: checked per turn; A2A: at stack build, kept fresh by `knowledge_rev` in the cache key). Tool output capped at 16 000 chars.
 - `CitationCollector` (protocol in `domain.py`, implementation `knowledge/citations.py: Collector`) — see §14.2. Owned by [knowledge]; one instance per web turn, never shared between turns.
-- **File Search swap-in (not this round)**: if the owner tops up AI Studio credits, a third backend `file_search` can be added behind the same interface using `gemini-api-key` from Secret Manager. Not implemented in P1.
+- **`file_search` replaces `rag_engine` (D1, built)**: the `rag_engine` bullet above is historical; see D1 at the top for the shipped File Search calls (`knowledge/file_search.py`).
 
 ### 10.2 Web grounding [chat + knowledge.citations]
 - When `version.web_search_enabled`: add `google_search` (native) on `gemini-3*` models; on `gemini-2.5*` with any function tool present use `GoogleSearchTool(bypass_multi_tools_limit=True)`; with no function tools, native `google_search` works on any model.
@@ -1857,6 +1864,8 @@ class Collector:                                                  # implements d
     def web_search_queries(self) -> list[str]
 def new_collector() -> CitationCollector
 def make_search_tool(agent_id: str, collector: CitationCollector | None) -> FunctionTool   # None = per-result numbering (A2A)
+# Additive helpers (revision 3): add_files / Upload (seed script), counts (Agent.knowledge summary),
+# sweep_stale_all (startup sweep, never raises).
 ```
 
 **records**
@@ -1909,6 +1918,8 @@ async def verify_token(token: str | None, slug: str | None) -> VerifiedMandate  
 def jwks() -> dict
 async def reserve_call(mandate: VerifiedMandate, agent: AgentDoc, message_id: str, request_preview: str,
                        price_cents: int) -> str  # T8: replay + budget incl. reserved_cents; snapshots price
+    # Production path. billing.a2a_billing.reserve_a2a_call is a test-only reference that writes the same
+    # §5.1 call doc (same call_id); tests/a2a/test_real_billing.py proves the two packages agree.
 def call_id_for(mandate_id: str, message_id: str) -> str
 async def get_stack(slug: str) -> A2AStack
 ```
@@ -1959,6 +1970,13 @@ Deliverables this round: this section, a "Scaling" section in `README.md`, and o
 ---
 
 ## 17. Revision log
+
+**Revision 3 (2026-10-17, integration)** — as-built contract updates from the lane reports:
+- D1 applied to §5.1/§6.4/§10.1/§14.2 (File Search fields, write-once `knowledge_store`, backend protocol, DELETE 503, additive knowledge exports, `knowledge.status` collection-group field override).
+- Dashboard income summed in memory; no Firestore aggregation queries (§3.1, §5.3).
+- `ChatMessage.charge.round_index` is nullable (owner rounds), matching `domain.MessageCharge` (§6.3).
+- `/health` external alias of `/healthz` (§3.2, §6.4).
+- Stub fallbacks (`chat/deps.py`, `agents/deps.py`) and guarded router imports removed (§3.1, §14.3).
 
 **Revision 2 (2026-10-15)** — review fixes, all blockers and majors applied:
 - Deploy: Cloud Build submits the repo root with `.gcloudignore`, `docker build -f deploy/backend.Dockerfile … backend`, tag only `${_SHA}` (§13.2/§13.4).

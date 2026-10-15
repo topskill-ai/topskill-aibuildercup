@@ -467,8 +467,6 @@ async def upload_knowledge(owner: CurrentUser, agent: AgentDoc, files: list[str]
     from topskill.main import create_app
 
     app = create_app()
-    if not any(r.endswith("knowledge.router:router") for r in app.state.mounted_routers):
-        return "skipped (knowledge package not available)"
 
     async def _owner() -> CurrentUser:
         return owner

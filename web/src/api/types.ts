@@ -84,7 +84,7 @@ export type ToolKind = "search" | "web" | "skill" | "record" | "a2a" | "other";
 export interface ChatMessage { id: string; role: "user" | "model"; text: string;
   status: "ok" | "failed" | "aborted"; turn_id: string; citations: Citation[];
   search_entry_point_html: string | null; tools: ToolLine[];
-  charge: { charged_cents: number; free: boolean; round_index: number } | null; created_at: string }
+  charge: { charged_cents: number; free: boolean; round_index: number | null } | null; created_at: string }
 export interface ConversationOut { id: string; agent_slug: string; title: string; rounds_ok: number;
   created_at: string; updated_at: string; messages: ChatMessage[] }
 export interface ConversationSummary { id: string; visitor_name: string; title: string; rounds_ok: number;

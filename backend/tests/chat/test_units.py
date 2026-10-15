@@ -338,11 +338,11 @@ def test_concurrency_limit(monkeypatch: pytest.MonkeyPatch) -> None:
             locks.release_turn("cnv_c1")
 
 
-def test_deps_fall_back_to_stubs_when_packages_are_missing() -> None:
-    import importlib.util
+def test_deps_resolve_the_real_packages() -> None:
+    import importlib
 
     deps = get_deps()
     for name in ("billing", "knowledge", "records"):
-        if importlib.util.find_spec(f"topskill.{name}") is None:
-            assert is_stub(getattr(deps, name))
+        assert getattr(deps, name) is importlib.import_module(f"topskill.{name}")
+        assert not is_stub(getattr(deps, name))
     assert get_deps() is deps  # cached

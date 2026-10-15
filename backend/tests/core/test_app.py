@@ -141,6 +141,13 @@ async def test_body_limit_413() -> None:
         assert_envelope(streamed, 413, "payload_too_large")
 
 
+async def test_health_alias_matches_healthz(c: httpx.AsyncClient) -> None:
+    health = await c.get("/health")
+    healthz = await c.get("/healthz")
+    assert health.status_code == healthz.status_code == 200
+    assert health.json() == healthz.json()
+
+
 async def test_healthz(c: httpx.AsyncClient) -> None:
     resp = await c.get("/healthz")
     assert resp.status_code == 200
@@ -207,13 +214,43 @@ async def test_cors_headers_on_500(c: httpx.AsyncClient) -> None:
     assert resp.headers["access-control-allow-origin"] == "http://localhost:5173"
 
 
-def test_app_boots_with_zero_domain_modules() -> None:
+def test_app_boots_with_every_module() -> None:
     app = create_app()
-    assert app.state.mounted_routers[:2] == ["topskill.users.router:router", "topskill.meta_router:router"]
+    assert app.state.mounted_routers == [
+        "topskill.users.router:router",
+        "topskill.meta_router:router",
+        "topskill.skills.router:router",
+        "topskill.agents.router:router",
+        "topskill.agents.public_router:router",
+        "topskill.billing.router:router",
+        "topskill.billing.router:public_router",
+        "topskill.knowledge.router:router",
+        "topskill.records.router:router",
+        "topskill.chat.router:public_router",
+        "topskill.chat.router:router",
+        "topskill.a2a.mandate_router:router",
+        "topskill.a2a.router:router",
+    ]
     spec = app.openapi()
-    assert {"/healthz", "/api/me", "/api/me/become-creator", "/api/public/meta"} <= set(spec["paths"])
+    assert {
+        "/healthz",
+        "/api/me",
+        "/api/me/become-creator",
+        "/api/public/meta",
+        "/api/skills",
+        "/api/agents",
+        "/api/public/agents/{slug}",
+        "/api/wallet",
+        "/api/dashboard",
+        "/api/agents/{agent_id}/knowledge",
+        "/api/agents/{agent_id}/records",
+        "/api/public/agents/{slug}/chat",
+        "/api/mandates",
+        "/api/demo/assistant/chat",
+    } <= set(spec["paths"])
     ops = {op["operationId"] for item in spec["paths"].values() for op in item.values()}
     assert {"healthz", "get_me", "update_me", "become_creator", "get_meta"} <= ops
+    assert "/health" not in spec["paths"]  # external alias of /healthz, hidden from the schema
 
 
 def test_error_codes_cover_spec() -> None:

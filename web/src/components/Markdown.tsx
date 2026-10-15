@@ -19,9 +19,15 @@ interface MdNode {
 }
 
 const MARKER_RE = /\[(\d{1,3})\]/g;
+const TRAILING_PUNCT_RE = /^[.,;:!?)]+/;
 const SKIP_PARENTS = new Set(["link", "linkReference", "inlineCode", "code", "definition"]);
 
-/** Split one text node into text + citation nodes. Exported for tests. */
+/**
+ * Split one text node into text + citation nodes. Exported for tests.
+ *
+ * The whitespace right before a marker is dropped and the marker is kept on one line with any
+ * punctuation that directly follows it ("pages [1]." renders as "pages¹." and never wraps before ¹).
+ */
 // eslint-disable-next-line react-refresh/only-export-components
 export function splitCitationText(value: string, valid: ReadonlySet<number>): MdNode[] {
   const out: MdNode[] = [];
@@ -30,13 +36,22 @@ export function splitCitationText(value: string, valid: ReadonlySet<number>): Md
     const n = Number(match[1]);
     if (!valid.has(n)) continue;
     const start = match.index ?? 0;
-    if (start > last) out.push({ type: "text", value: value.slice(last, start) });
-    out.push({
+    if (start < last) continue; // already consumed as trailing punctuation
+    const before = value.slice(last, start).replace(/\s+$/, "");
+    if (before) out.push({ type: "text", value: before });
+    const end = start + match[0].length;
+    const punct = TRAILING_PUNCT_RE.exec(value.slice(end))?.[0] ?? "";
+    const ref: MdNode = {
       type: "citationRef",
       data: { hName: "sup", hProperties: { dataCite: String(n) } },
       children: [{ type: "text", value: String(n) }],
+    };
+    out.push({
+      type: "citationGroup",
+      data: { hName: "span", hProperties: { className: ["whitespace-nowrap"] } },
+      children: punct ? [ref, { type: "text", value: punct }] : [ref],
     });
-    last = start + match[0].length;
+    last = end + punct.length;
   }
   if (out.length === 0) return [{ type: "text", value }];
   if (last < value.length) out.push({ type: "text", value: value.slice(last) });

@@ -249,8 +249,8 @@ async def make_agent(
     skills = await _skill_refs(config.skill_ids)
     version = _version_from(agent, agent.active_version, skills, owner.uid, "Initial version")
 
-    if open_owner_wallet:
-        await open_wallet(owner.uid, owner_balance_cents)
+    if open_owner_wallet and not (await get_db().collection(Col.WALLETS).document(owner.uid).get()).exists:
+        await open_wallet(owner.uid, owner_balance_cents)  # a second agent never resets the owner's balance
 
     db = get_db()
     batch = db.batch()

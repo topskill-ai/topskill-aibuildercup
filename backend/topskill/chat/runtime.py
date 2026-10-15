@@ -59,7 +59,7 @@ from topskill.chat.agent_factory import (
     live_model,
     search_mode_for,
 )
-from topskill.chat.deps import Deps, get_deps, is_stub
+from topskill.chat.deps import Deps, get_deps, is_stub, real_deps
 from topskill.chat.events import SAVE_RECORD_TOOL, TurnState
 from topskill.chat.history import load_history, seed_session
 from topskill.chat.prompt import build_instruction
@@ -580,6 +580,10 @@ def _schedule_extraction(ctx: TurnContext, deps: Deps) -> None:
     """[SHOULD] record extraction fallback when the model did not call save_record (skipped for stubs)."""
     extract = getattr(deps.records, "extract", None)
     if extract is None or is_stub(deps.records):
+        return
+    if get_settings().llm_mode == "fake" and deps.records is real_deps().records:
+        # The scripted FakeLlm only serves the chat turn; the real extractor would call Vertex.
+        log.info("extraction_skipped reason=llm_mode_fake conversation_id=%s", ctx.conversation_id)
         return
     tasks.spawn(
         extract(agent=ctx.agent, version=ctx.version, conversation_id=ctx.conversation_id, visitor=ctx.user),

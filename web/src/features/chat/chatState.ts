@@ -76,10 +76,9 @@ export function toWire(m: ViewMessage): ChatMessage {
     citations: m.citations,
     search_entry_point_html: m.search_entry_point_html,
     tools: m.tools,
-    // Owner rounds keep `round_index: null` (SPEC §8.5); the §6.3 wire type says `number` but the
-    // backend sends null for them, so the stash must not invent a round 0.
+    // Owner rounds keep `round_index: null` (SPEC §8.5), so the stash must not invent a round 0.
     charge: m.charge
-      ? { charged_cents: m.charge.charged_cents, free: m.charge.free, round_index: m.charge.round_index as number }
+      ? { charged_cents: m.charge.charged_cents, free: m.charge.free, round_index: m.charge.round_index }
       : null,
     created_at: m.created_at,
   };
