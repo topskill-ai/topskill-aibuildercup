@@ -78,7 +78,11 @@ def get_client() -> genai.Client:
         raise IndexingError("GEMINI_API_KEY is not set", user_message=NOT_CONFIGURED_ERROR)
     with _client_lock:
         if _client is None or _client_key != key:
-            _client = genai.Client(api_key=key, http_options=types.HttpOptions(timeout=HTTP_TIMEOUT_MS))
+            _client = genai.Client(
+                vertexai=False,  # GOOGLE_GENAI_USE_VERTEXAI=true is set for the rest of the app
+                api_key=key,
+                http_options=types.HttpOptions(timeout=HTTP_TIMEOUT_MS),
+            )
             _client_key = key
         return _client
 
