@@ -77,12 +77,12 @@ flowchart LR
     ASSIST["Enterprise Assistant<br/>(ADK LlmAgent, A2A client)"]
   end
   subgraph GCP["Google Cloud (project top-skill)"]
-    GEM["Vertex AI Gemini (global)<br/>3-flash-preview / 2.5-flash / 2.5-flash-image"]
-    RAG["Vertex AI RAG Engine<br/>corpus per agent (asia-southeast1)"]
+    GEM["Vertex AI Gemini (global)<br/>3.8-flash / 3-flash-preview / 3.1-pro-preview / 3.1-flash-image"]
+    RAG["Gemini File Search (Developer API)<br/>store per agent"]
     GS["Google Search grounding"]
     FS[("Firestore (default)<br/>users, wallets, ledger, agents,<br/>conversations, records, mandates")]
     GCS[("Cloud Storage<br/>gs://top-skill-files")]
-    SM["Secret Manager<br/>mandate-signing-key"]
+    SM["Secret Manager<br/>mandate-signing-key, gemini-api-key"]
     IDP["Identity Platform<br/>(Firebase Auth)"]
   end
   EXT["External A2A clients"]
@@ -104,7 +104,7 @@ Key architecture decisions (each backed by a probe):
 1. **One Cloud Run service, one instance** (`--max-instances 1 --min-instances 1 --concurrency 80`). In-process per-conversation locks, abort registry, A2A task store and A2A executor cache are then correct without extra infrastructure. The scale-out design (what replaces each in-process piece, and wallet sharding) is written down in §16 and shown on the architecture slide; implementing it is post-hackathon.
 2. **The browser calls Cloud Run directly** for every API call (`VITE_API_BASE` = Cloud Run URL), with CORS and `Authorization: Bearer <Firebase ID token>`. Firebase Hosting rewrites buffer SSE and die at ~60 s (probe), so Hosting serves only static files. No cookies.
 3. **Stateless chat**: per turn, build an ADK `LlmAgent` from Firestore config, seed an `InMemorySessionService` from our own `conversations/{id}/messages`, run `Runner.run_async(... StreamingMode.SSE)`. Our Firestore messages are the source of truth; ADK session storage is not used.
-4. **Knowledge = Vertex AI RAG Engine** (one corpus per agent, `asia-southeast1`) queried by **our own `search_knowledge` function tool** via REST `retrieveContexts`, which returns `pageSpan` → page-level citations. Gemini File Search is not available on Vertex and the Developer API path is blocked by billing (probe). A `local` knowledge backend (in-Firestore chunks, simple term-frequency scorer) is the dev/test backend and the production fallback if RAG Engine is turned off.
+4. **Knowledge = Gemini File Search** (Developer API, one store per agent; owner decision D1 — RAG Engine is not used) queried by **our own `search_knowledge` function tool**, which maps `retrieved_context.page_number` → page-level citations. A `local` knowledge backend (in-Firestore chunks, simple term-frequency scorer) is the dev/test backend and the production fallback.
 5. **Web grounding = built-in `google_search`** tool. On `gemini-3-*` it coexists with function tools; on `gemini-2.5-*` we use `GoogleSearchTool(bypass_multi_tools_limit=True)` (probe).
 6. **Billing settles at the end of a turn inside one Firestore transaction** together with the persisted messages ("persisted ⇒ billed"). Failed turns (no visible text) and turns actually interrupted by a stop/disconnect are saved but never charged or counted; a stop that arrives after the model finished does not change the outcome (§7.4).
 7. **A2A**: FastAPI routes `/a2a/{slug}` + `/a2a/{slug}/.well-known/agent-card.json` backed by a cached per-agent `JsonRpcDispatcher` + a `TopSkillA2aExecutor` (subclass of ADK `A2aAgentExecutor`) stack (mounting `to_a2a` sub-apps does not work — probe). Mandate verified in the route (HTTP 402 on failure); charge in `after_agent` only on `TASK_STATE_COMPLETED`; every other exit path (exception, timeout, dispatcher rejection) settles the reserved call as failed and not charged (§9.1). `CancelTask` is rejected by the route (§9.3); the executor's `cancel()` still charges a call whose answer text was already emitted.
@@ -114,22 +114,22 @@ Key architecture decisions (each backed by a probe):
 ### 2.1 Google services used
 | Service | Used for | Why |
 |---|---|---|
-| Vertex AI Gemini `gemini-3-flash-preview` | Chat runtime, drafting (structured output), record extraction, Enterprise Assistant | Fast, tool use + Google Search in one request, structured output verified |
-| Vertex AI Gemini `gemini-2.5-flash` | Fallback model on 429/5xx | Verified available; occasional 429 on 3-flash |
-| `gemini-3.1-pro-preview` | Optional "Better draft" | Higher quality drafts (≈14 s) |
-| `gemini-2.5-flash-image` | Avatar generation | Only image model available to the project (≈8 s, 1024² PNG) |
+| Vertex AI Gemini `gemini-3.8-flash` | Chat runtime, drafting (structured output), record extraction, Enterprise Assistant (D6) | Fast, tool use + Google Search in one request, structured output verified |
+| Vertex AI Gemini `gemini-3-flash-preview` | Fallback model on 429/5xx (D6) | Verified available |
+| `gemini-3.1-pro-preview` (fallback `gemini-2.5-pro`) | Optional "Better draft" | Higher quality drafts |
+| `gemini-3.1-flash-image` (fallback `gemini-2.5-flash-image`) | Avatar generation | 1024² image, converted to WebP |
 | Agent Development Kit (google-adk 2.12) | Agent runtime, tools, A2A executor, `RemoteA2aAgent`-style caller | Hackathon focus, verified streaming and A2A |
 | A2A protocol (a2a-sdk 1.x) | Agent-to-agent calls, Agent Cards | Interop with any A2A client |
 | Google Search grounding | Fresh facts with source links | Required "grounded answers" |
-| Vertex AI RAG Engine | Knowledge retrieval with page spans | Page-level citations; File Search unavailable on Vertex |
+| Gemini File Search (Developer API, `gemini-api-key`) | Knowledge retrieval with page numbers (D1) | Page-level citations; managed chunking and embeddings |
 | Firestore (native, `asia-southeast1`) | All application data, transactional ledger | Serverless, transactions, emulator |
 | Cloud Storage | Skill files, knowledge originals, avatars | Durable blobs |
 | Firebase Auth (Identity Platform) | Email/password (+ Google when enabled) sign-in | ID tokens verifiable server-side for free |
 | Firebase Hosting | SPA hosting | Global CDN, preview channels |
 | Cloud Run | Backend | SSE up to 3600 s, min instances |
-| Cloud Build + Artifact Registry | Container build | `gcloud builds submit` from CI |
-| Secret Manager | Mandate signing key | No secrets in code or env files |
-| GitHub Actions + Workload Identity Federation | CI/CD | Keyless deploys (needs owner action, §15) |
+| Cloud Build + Artifact Registry | Container build | `gcloud builds submit` from `deploy_backend.sh` |
+| Secret Manager | Mandate signing key, Gemini API key (File Search) | No secrets in code or env files |
+| GitHub Actions | CI (tests only; D3: no WIF, deploys run `deploy_backend.sh` / `deploy_web.sh` from a laptop) | |
 
 ---
 
