@@ -43,3 +43,29 @@ export const CAPABILITY_ICONS: Record<string, LucideIcon> = {
 };
 
 export const CAPABILITY_ICON_NAMES = Object.keys(CAPABILITY_ICONS);
+
+/** Friendly names for the icon picker (what the icon stands for, not the lucide name). */
+export const CAPABILITY_ICON_LABELS: Record<string, string> = {
+  sparkles: "General",
+  "book-open": "Guide",
+  search: "Research",
+  "file-text": "Document",
+  briefcase: "Work",
+  "graduation-cap": "Education",
+  scale: "Legal",
+  "heart-pulse": "Health",
+  calculator: "Budget",
+  globe: "International",
+  "message-circle": "Conversation",
+  "clipboard-list": "Checklist",
+  lightbulb: "Ideas",
+  "shield-check": "Compliance",
+  "chart-line": "Analysis",
+  users: "People",
+  plane: "Travel",
+  landmark: "Government",
+};
+
+export function capabilityIconLabel(name: string): string {
+  return CAPABILITY_ICON_LABELS[name] ?? name.replace(/-/g, " ");
+}

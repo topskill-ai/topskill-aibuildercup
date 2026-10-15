@@ -10,7 +10,7 @@ import { Select } from "@/components/ui/Select";
 import { ACCENT_COLORS, accentClasses } from "@/lib/accent";
 import { cn } from "@/lib/cn";
 import { CapabilityIcon } from "@/features/studio/CapabilityIcon";
-import { CAPABILITY_ICON_NAMES } from "@/features/studio/capabilityIcons";
+import { CAPABILITY_ICON_NAMES, capabilityIconLabel } from "@/features/studio/capabilityIcons";
 import { LIMITS } from "./wizard";
 
 export function StarterQuestionsEditor({
@@ -129,7 +129,7 @@ export function CapabilitiesEditor({
                 aria-label={`Capability ${i + 1} icon`}
                 value={c.icon}
                 disabled={disabled}
-                options={CAPABILITY_ICON_NAMES.map((n) => ({ value: n, label: n.replace(/-/g, " ") }))}
+                options={CAPABILITY_ICON_NAMES.map((n) => ({ value: n, label: capabilityIconLabel(n) }))}
                 onChange={(e) => set(i, { icon: e.target.value })}
               />
               <Input
