@@ -15,6 +15,8 @@ import time
 from collections import Counter
 from dataclasses import dataclass
 
+from google.cloud.firestore_v1.base_query import FieldFilter
+
 from topskill.db import Col, get_db
 from topskill.domain import Passage
 from topskill.knowledge.base import BackendName, ExtractedText, IngestResult, KnowledgeFileDoc
@@ -155,7 +157,10 @@ class LocalBackend:
     async def delete(self, agent_id: str, store: str | None, file: KnowledgeFileDoc) -> None:
         col = self._chunks_col(agent_id)
         db = get_db()
-        refs = [snap.reference async for snap in col.where("file_id", "==", file.file_id).stream()]
+        refs = [
+            snap.reference
+            async for snap in col.where(filter=FieldFilter("file_id", "==", file.file_id)).stream()
+        ]
         for start in range(0, len(refs), _BATCH):
             batch = db.batch()
             for ref in refs[start : start + _BATCH]:

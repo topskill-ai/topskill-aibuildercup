@@ -25,6 +25,7 @@ from typing import Any
 
 from google.api_core import exceptions as gexc
 from google.cloud import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from topskill import tasks
 from topskill.config import get_settings
@@ -398,7 +399,7 @@ async def sweep_stale(agent_id: str) -> int:
     """Mark this agent's stale ``processing`` files failed; → count."""
     now = utcnow()
     count = 0
-    async for snap in _files_col(agent_id).where("status", "==", "processing").stream():
+    async for snap in _files_col(agent_id).where(filter=FieldFilter("status", "==", "processing")).stream():
         doc = KnowledgeFileDoc.model_validate(snap.to_dict())
         if _is_stale(doc, now):
             await _mark_stale(agent_id, doc.file_id)
@@ -411,7 +412,9 @@ async def sweep_stale_all() -> int:
     now = utcnow()
     count = 0
     try:
-        query = get_db().collection_group(Col.KNOWLEDGE).where("status", "==", "processing")
+        query = (
+            get_db().collection_group(Col.KNOWLEDGE).where(filter=FieldFilter("status", "==", "processing"))
+        )
         async for snap in query.stream():
             agent_ref = snap.reference.parent.parent
             if agent_ref is None:
@@ -481,7 +484,7 @@ async def _ready_files(agent_id: str, rev: int) -> dict[str, KnowledgeFileDoc]:
         return entry.files
     active = backend_name()
     files: dict[str, KnowledgeFileDoc] = {}
-    async for snap in _files_col(agent_id).where("status", "==", "ready").stream():
+    async for snap in _files_col(agent_id).where(filter=FieldFilter("status", "==", "ready")).stream():
         doc = KnowledgeFileDoc.model_validate(snap.to_dict())
         if doc.backend == active:
             files[doc.file_id] = doc
@@ -492,7 +495,7 @@ async def _ready_files(agent_id: str, rev: int) -> dict[str, KnowledgeFileDoc]:
 async def has_ready_files(agent_id: str) -> bool:
     """True when at least one file is ready in the active backend (decides whether the tool is offered)."""
     active = backend_name()
-    async for snap in _files_col(agent_id).where("status", "==", "ready").stream():
+    async for snap in _files_col(agent_id).where(filter=FieldFilter("status", "==", "ready")).stream():
         if (snap.to_dict() or {}).get("backend", "local") == active:
             return True
     return False
