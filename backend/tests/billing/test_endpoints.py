@@ -51,6 +51,7 @@ STATS_KEYS = {
     "a2a_gross_cents",
     "records",
     "last_activity_at",
+    "guard",  # P2 guard (SPEC §18 "Guard")
 }
 
 

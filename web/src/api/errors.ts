@@ -61,6 +61,8 @@ export const ErrorCodes = {
   network_error: "network_error",
   // Enterprise Assistant `a2a_result.error_code` (§7.5)
   call_limit: "call_limit",
+  // P2 guard (SPEC §18 "Guard"): mid-stream SSE error, A2A JSON-RPC data.code, a2a_result.error_code
+  blocked_by_policy: "blocked_by_policy",
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

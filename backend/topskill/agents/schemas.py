@@ -100,6 +100,7 @@ class ConfigIn(BaseModel):
     temperature: float | None = Field(None, ge=0, le=1.5)
     web_search_enabled: bool = True
     record_schema: RecordSchemaIn | None = None
+    safety_screening: bool = True  # P2 guard (SPEC §18 "Guard")
 
 
 class CreateAgentRequest(BaseModel):
@@ -141,6 +142,7 @@ class ConfigPatch(BaseModel):
     web_search_enabled: bool | None = None
     skill_ids: list[str] | None = Field(None, min_length=1, max_length=5)
     record_schema: RecordSchemaIn | None = None
+    safety_screening: bool | None = None  # P2 guard (SPEC §18 "Guard"); live, never sets config_dirty
 
 
 class UpdateAgentRequest(BaseModel):
@@ -207,6 +209,17 @@ class SkillOut(BaseModel):
     created_at: str
 
 
+class GuardStatsOut(BaseModel):  # P2 guard (SPEC §18 "Guard"); mirrors topskill.guard.stats.STATS_KEYS
+    prompts_screened: int = 0
+    prompts_blocked: int = 0
+    prompts_redacted: int = 0
+    answers_screened: int = 0
+    answers_blocked: int = 0
+    answers_redacted: int = 0
+    answers_flagged: int = 0
+    failed_open: int = 0
+
+
 class AgentStatsOut(BaseModel):
     rounds: int = 0
     paid_rounds: int = 0
@@ -217,6 +230,7 @@ class AgentStatsOut(BaseModel):
     a2a_gross_cents: int = 0
     records: int = 0
     last_activity_at: str | None = None
+    guard: GuardStatsOut = Field(default_factory=GuardStatsOut)  # P2 guard (SPEC §18 "Guard")
 
 
 class AgentUrlsOut(BaseModel):
@@ -377,6 +391,7 @@ class PublicFeaturesOut(BaseModel):
     web_search: bool
     records: bool
     a2a: bool
+    safety_screening: bool = False  # P2 guard (SPEC §18 "Guard"): "Protected by Model Armor" badge
 
 
 class PublicStatsOut(BaseModel):

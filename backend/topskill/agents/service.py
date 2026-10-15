@@ -35,6 +35,7 @@ from topskill.domain import (
     iso_z,
 )
 from topskill.errors import ApiError, Codes
+from topskill.guard import guard_stats_wire
 from topskill.repo import get_owned_agent, get_user, get_version
 from topskill.skills.service import get_skill_docs, load_skill_refs, skill_to_wire
 
@@ -208,6 +209,7 @@ async def create_agent(owner: CurrentUser, req: CreateAgentRequest) -> AgentDoc:
         web_search_enabled=req.config.web_search_enabled,
         skill_ids=[r.skill_id for r in refs],
         record_schema=record_schema,
+        safety_screening=req.config.safety_screening,
     )
     db = get_db()
     for attempt in range(1 if custom_slug else AUTO_SLUG_ATTEMPTS):
@@ -463,6 +465,10 @@ async def _patched_config(agent: AgentDoc, user: CurrentUser, patch: ConfigPatch
         new_schema = validate_record_schema(patch.record_schema)
         await deps.records().assert_schema_change_allowed(agent.id, agent.config.record_schema, new_schema)
         data["record_schema"] = new_schema.model_dump(mode="python") if new_schema is not None else None
+    if "safety_screening" in sent:  # P2 guard: live, not compared by config_matches_version
+        if patch.safety_screening is None:
+            raise _null_not_allowed("config.safety_screening")
+        data["safety_screening"] = patch.safety_screening
     return AgentConfig.model_validate(data)
 
 
@@ -500,6 +506,7 @@ def stats_to_wire(data: dict | None) -> dict:
     for key, value in list(out.items()):
         if key != "last_activity_at":
             out[key] = int(value or 0)
+    out["guard"] = guard_stats_wire(data)  # P2 guard (SPEC §18 "Guard")
     return out
 
 

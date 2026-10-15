@@ -12,6 +12,7 @@ import { AgentInfoPanel } from "@/features/chat/AgentInfo";
 import { usePublicAgent } from "@/features/chat/api";
 import { NotFoundState, UnavailableState } from "@/features/chat/StateViews";
 import { PriceChip } from "@/features/marketplace/AgentBits";
+import { ModelArmorBadge } from "@/features/guard/GuardBits";
 import { accentClasses } from "@/lib/accent";
 import { cn } from "@/lib/cn";
 
@@ -29,6 +30,7 @@ function AgentHeader({ agent }: { agent: PublicAgent }) {
           <div className="mt-2 flex flex-wrap items-center gap-2 text-[13px] text-muted">
             <span className="min-w-0 truncate">by {agent.creator.name || "Unknown creator"}</span>
             <PriceChip pricing={agent.pricing} accent={agent.accent_color} />
+            {agent.features.safety_screening ? <ModelArmorBadge /> : null}
           </div>
         </div>
       </div>

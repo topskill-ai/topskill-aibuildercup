@@ -53,7 +53,13 @@ async def test_public_agent_page(client: httpx.AsyncClient) -> None:
     assert page["status"] == "active" and page["title"] == "Travel Insurance Helper"
     assert page["creator"] == {"uid": uid, "name": "Ana Silva", "headline": ""}
     assert page["pricing"] == {"mode": "per_round", "price_cents": 100, "free_rounds": 2}
-    assert page["features"] == {"knowledge": False, "web_search": True, "records": False, "a2a": True}
+    assert page["features"] == {
+        "knowledge": False,
+        "web_search": True,
+        "records": False,
+        "a2a": True,
+        "safety_screening": False,  # P2 guard: GUARD_BACKEND=off in tests
+    }
     assert page["stats"] == {"conversations": 0, "a2a_calls": 0}
     assert len(page["starter_questions"]) == 3  # null → defaults
     assert page["starter_questions"][0]["label"] == "Cover levels"

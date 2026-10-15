@@ -130,7 +130,23 @@ class Settings(BaseSettings):
     # ---- request limits
     max_request_bytes: int = Field(30 * 1024 * 1024, ge=1)
 
+    # ---- guard: Model Armor screening of public agents (P2, SPEC §18 "Guard"); fail-open on errors
+    guard_backend: Literal["model_armor", "off"] = "model_armor"
+    guard_project: str = "top-skill"
+    guard_location: str = "asia-southeast1"
+    guard_template: str = "topskill-public"
+    guard_timeout_s: float = Field(3.0, gt=0, le=30)
+    guard_max_chars: int = Field(20_000, ge=100, le=200_000)
+    guard_prompt_block_filters: CsvList = Field(
+        default_factory=lambda: ["pi_and_jailbreak", "rai", "malicious_uris", "csam"]
+    )
+    guard_response_block_filters: CsvList = Field(default_factory=lambda: ["csam"])
+    guard_redact_sdp: bool = True
+
     _split_lists = field_validator("chat_model_allowlist", "cors_origins", mode="before")(_split_csv)
+    _split_guard_lists = field_validator(
+        "guard_prompt_block_filters", "guard_response_block_filters", mode="before"
+    )(_split_csv)
 
     @field_validator("public_api_base", "public_web_base")
     @classmethod

@@ -2000,3 +2000,54 @@ Deliverables this round: this section, a "Scaling" section in `README.md`, and o
 - Contracts: all cross-package types in `domain.py`, `MessageDoc`/`ConversationDoc`/`message_to_wire`, `chat/deps.py` single injection point, SSE payload types in §6.3 mirrored by `events.py`, `ErrorCodes` extended, `/api/public/meta`, `tasks.spawn` (§3.1, §5.2, §6.2, §6.3, §14.2, §14.3).
 - Plan: walking skeleton by Oct 16 12:00, code freeze Oct 17 18:00 Asia/Shanghai, MUST/SHOULD re-tag with per-lane checklist, demo storyline adds a rejected A2A call and records the visitor beat on a pre-ingested agent, scale-out design (§1.2, §11.4, §12.4, §14.1, §16).
 - Minors: zip-bomb/symlink limits, `google_search_agent` tool naming, `RecordSchemaIn` accepts `fields: []`, single `build_instruction` signature, `save_record` schema probe + fallback tool, pytest session loop.
+
+---
+
+## 18. P2 features
+
+### 18.x Guard: Model Armor protection for public agents
+
+Every public agent is screened by **Google Cloud Model Armor** unless its creator turns it off. Package `backend/topskill/guard/` (owner: guard lane); web `web/src/features/guard/`.
+
+**Template** — `projects/top-skill/locations/asia-southeast1/templates/topskill-public` (created by `deploy/scripts/provision.sh`; labels `app=topskill`):
+| Filter | Setting |
+|---|---|
+| Prompt injection & jailbreak | enabled, `MEDIUM_AND_ABOVE` |
+| Responsible AI | hate speech, harassment, sexually explicit, dangerous — each `MEDIUM_AND_ABOVE` |
+| Sensitive Data Protection | basic config (credit cards, financial account numbers, GCP credentials / API keys, …) |
+| Malicious URIs | **not available in asia-southeast1** (`CAPABILITY_NOT_SUPPORTED`), so not in the template; the code still honours a `malicious_uris` match if a template provides it |
+gcloud needs `CLOUDSDK_API_ENDPOINT_OVERRIDES_MODELARMOR=https://modelarmor.asia-southeast1.rep.googleapis.com/` (without it, it falsely reports `PERMISSION_DENIED`). The backend calls the regional REST endpoint `https://modelarmor.{GUARD_LOCATION}.rep.googleapis.com/v1/{template}:sanitizeUserPrompt|sanitizeModelResponse` with ADC (`httpx`, no extra client library).
+
+**API** (`topskill.guard`):
+- `async sanitize_prompt(text, ctx) -> GuardVerdict` and `async sanitize_response(text, ctx) -> GuardVerdict`; `ctx = GuardContext(agent_id, channel: "web"|"a2a", enabled, request_id)`, `enabled` = the agent's `config.safety_screening`.
+- `GuardVerdict{action: "allow"|"redact"|"block", text, categories, screened, failed_open, info_types, findings}`. Categories: `pi_and_jailbreak`, `rai:<type>`, `sdp`, `malicious_uris`, `csam`. `text` is always the safest form of the input (SDP spans replaced by `[REDACTED:<INFO_TYPE>]`, using the finding `codepointRange`s; a de-identify template's text is used when there are no locations).
+- **Never raises; fail-open**: a timeout (`GUARD_TIMEOUT_S`, default 3 s), HTTP/auth/parse error or a bug yields `allow` with `failed_open=true`, logged as `guard_failed_open … trace_id=…` and counted. Rationale: Model Armor is a layer on top of Gemini's own safety filters; an outage must not take every public agent down. Every verdict is logged as `guard_verdict kind channel agent_id request_id action categories info_types ms` (never the text).
+- Policy: prompt — a match in `GUARD_PROMPT_BLOCK_FILTERS` (default `pi_and_jailbreak,rai,malicious_uris,csam`) blocks; otherwise an `sdp` match is redacted (`GUARD_REDACT_SDP`). Response — `GUARD_RESPONSE_BLOCK_FILTERS` (default `csam`) blocks; `sdp` is redacted; other matches are only counted as `answers_flagged` (RAI on model answers produced false positives in the 2026-10-15 probe). An `sdp` match without locations cannot be redacted and blocks. Text over `GUARD_MAX_CHARS` (20 000) is screened on its prefix only.
+- `warm_up()` runs at startup (`main.py` lifespan task): loading ADC and the first token takes ≈2 s, which would otherwise exceed the timeout on the first turn. Steady-state latency ≈0.4 s from the laptop.
+
+**Web chat** (`chat/runtime.py::run_turn`):
+1. The visitor message is screened concurrently with `_prepare` (history, knowledge check, prompt build).
+2. `block` → no model call; `turn_error = blocked_by_policy`; outcome `failed` (§7.4); settled with `succeeded=false` → never charged, not counted as a round; the user message is stored as `verdict.text`.
+3. `redact` → the model and the transcript only ever see the redacted message.
+4. After the run, a successful answer (no turn error, non-empty, not interrupted) is screened before settlement. `redact` → the persisted answer is the redacted text and the round is charged normally; `block` → answer withheld (stored text `""`), `blocked_by_policy`, outcome `failed`, not charged. Text deltas are streamed live, so the client replaces the streamed answer from the `guard` event (the live screen may have shown the unredacted text for the duration of the stream; stored history, CSV and A2A previews never contain it).
+5. SSE event **`guard`** (new; clients that do not know it ignore it, §7.1): `{target: "prompt"|"answer", action: "blocked"|"redacted", categories: string[], text: string}`. Order: prompt → right after `status`; answer → after the last `text_delta`, before `citations`. Then the usual `error{code: "blocked_by_policy"}` + `done{outcome: "failed"}` when blocked.
+
+**A2A** (`a2a/router.py`): the text parts of `params.message` are joined with `\n` and screened during the preflight (before `reserve_call`, so `request_preview` is already redacted). `block` → the call is still reserved (T8) and immediately settled as **failed, not charged** (`error_code = blocked_by_policy`), and the route returns HTTP 400 JSON-RPC error `{code: -32001, data: {code: "blocked_by_policy", trace_id, detail: {categories, call_id}}}`; the runtime never runs. `redact` → the text parts are rewritten in place (findings mapped per part) before the dispatcher reads the cached body. The Enterprise Assistant surfaces it as `a2a_result{status: "rejected", error_code: "blocked_by_policy"}`. A2A answers are not screened (web channel only in this round).
+
+**Error code**: `blocked_by_policy` (mid-stream SSE `error`, A2A `error.data.code`, `a2a_result.error_code`); added to `errors.Codes` and web `ErrorCodes`.
+
+**Creator setting**: `AgentConfig.safety_screening: bool = true` (missing on stored agents ⇒ on). It is **live**: read from the agent doc on every turn/call, not snapshotted in `AgentVersion`, not compared by `config_matches_version`, so toggling it never sets `config_dirty`. Set via `POST /api/agents` `config.safety_screening` or `PATCH /api/agents/{id}` `{config: {safety_screening}}` (null → 400). Studio → Settings → "Safety" card: switch "Safety screening (Model Armor)" (saves immediately) + counters. Overview shows a "Model Armor on" chip.
+
+**Public badge**: `PublicAgentCard.features.safety_screening = config.safety_screening && GUARD_BACKEND != off`; the agent page header shows "Protected by Model Armor" when true.
+
+**Stats**: `agent_stats/{agent_id}` gains flat counters `guard_prompts_screened|guard_prompts_blocked|guard_prompts_redacted|guard_answers_screened|guard_answers_blocked|guard_answers_redacted|guard_answers_flagged|guard_failed_open`, written only with `Increment` + `set(merge=True)` in a background task (`tasks.spawn`). Wire: `AgentStats.guard: GuardStats` (`{prompts_screened, prompts_blocked, prompts_redacted, answers_screened, answers_blocked, answers_redacted, answers_flagged, failed_open}`) on `Agent`, `AgentSummary`, `Dashboard.agents[]` and `/api/agents/{id}/earnings`. The Studio dashboard shows a "Safety screening" card summed over the creator's agents.
+
+**Config** (`Settings`, env = upper-case): `GUARD_BACKEND = model_armor | off` (code default `model_armor`; tests and `.env.example` `off`), `GUARD_PROJECT` (`top-skill`), `GUARD_LOCATION` (`asia-southeast1`), `GUARD_TEMPLATE` (`topskill-public`), `GUARD_TIMEOUT_S` (3), `GUARD_MAX_CHARS` (20000), `GUARD_PROMPT_BLOCK_FILTERS`, `GUARD_RESPONSE_BLOCK_FILTERS`, `GUARD_REDACT_SDP` (true). Prod values in `deploy/env/prod.env.yaml`.
+
+**IAM / resources** (in `provision.sh`): enable `modelarmor.googleapis.com`; create the template if missing; grant `roles/modelarmor.user` on the project to `topskill-api@top-skill.iam.gserviceaccount.com`. Until the grant exists, prod fails open (`guard_failed_open … HTTP 403`) and keeps working.
+
+**Limits**: one Model Armor call per screened text (≤ 2 per web round, 1 per A2A call); text over 20 000 chars is screened on its prefix; Model Armor pricing applies per call beyond the free tier; malicious-URI filtering is unavailable in this region.
+
+**Tests**: `tests/guard/test_units.py` (parsing of recorded real payloads, policy, redaction, fail-open on error/timeout, counters), `tests/guard/test_chat_guard.py` (emulator: blocked prompt never runs the model and is not charged, redacted prompt/answer, withheld answer, flagged answer, outage fails open, per-agent switch, A2A blocked → failed call not charged, A2A part redaction, API flag/badge/stats) with `topskill.guard.fake.FakeGuard`; `tests/guard/test_live.py` (`-m live`, real template: a known injection string is blocked, a benign question allowed, a card number in an answer redacted). Web: `features/guard/*.test.tsx`.
+
+**E2E (2026-10-15, local stack with the real template and live Gemini)**: `docs/screenshots/guard/` — badge on the agent page, a known injection blocked (not charged), a card number redacted from the visitor message before the model, the dashboard "Safety screening" card and the Settings switch. Live A2A check: the same injection over `/a2a/visa-advisor` returned HTTP 400 `blocked_by_policy`, mandate `spent_cents` 0.

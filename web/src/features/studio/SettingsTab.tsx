@@ -23,6 +23,7 @@ import { AccentPicker, CapabilitiesEditor, StarterQuestionsEditor } from "@/feat
 import { PricingFields } from "@/features/publish/PricingFields";
 import { LIMITS, parsePricing, pricingFormFromPricing } from "@/features/publish/wizard";
 import { RecordFieldsEditor } from "@/features/records/RecordFieldsEditor";
+import { SafetySection } from "@/features/guard/SafetySection";
 import { agentApi, useAgentCacheUpdater, type UpdateAgentRequest } from "./api";
 import {
   profileFromAgent,
@@ -470,6 +471,7 @@ export function SettingsTab({ agent, onUpdateVersion }: { agent: Agent; onUpdate
     <div className="space-y-6">
       <ProfileSection agent={agent} />
       <RuntimeSection agent={agent} onUpdateVersion={onUpdateVersion} />
+      <SafetySection agent={agent} />
       <PricingSection agent={agent} />
       <StatusSection agent={agent} />
     </div>

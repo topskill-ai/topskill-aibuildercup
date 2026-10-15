@@ -49,7 +49,7 @@ from google.cloud import firestore
 from google.genai import types
 from pydantic import BaseModel
 
-from topskill import tasks
+from topskill import guard, tasks
 from topskill.auth import CurrentUser
 from topskill.chat.agent_factory import (
     THINKING_LEVEL,
@@ -103,6 +103,7 @@ ERROR_MESSAGES: dict[str, str] = {
     Codes.RATE_LIMITED: "The model is busy right now. Please try again in a moment.",
     Codes.SERVICE_UNAVAILABLE: "Your message could not be saved. Please try again.",
     Codes.INTERNAL_ERROR: "Something went wrong. Please try again.",
+    Codes.BLOCKED_BY_POLICY: "Blocked by the agent's safety screening. You were not charged.",
 }
 
 
@@ -444,6 +445,14 @@ async def run_turn(ctx: TurnContext, emit: Emit) -> None:
         turn_error: str | None = None
         attempt = _Attempt(state=state)
         prep: _Prepared | None = None
+        # P2 guard (SPEC §18 "Guard"): screen the visitor message while the turn is prepared; never raises.
+        guard_ctx = guard.GuardContext(
+            agent_id=ctx.agent.id,
+            channel="web",
+            enabled=ctx.agent.config.safety_screening,
+            request_id=ctx.request_id,
+        )
+        prompt_check = asyncio.ensure_future(guard.sanitize_prompt(ctx.message, guard_ctx))
         try:
             prep = await _prepare(ctx, deps)
         except Exception as exc:
@@ -451,6 +460,13 @@ async def run_turn(ctx: TurnContext, emit: Emit) -> None:
             turn_error = (
                 Codes.SERVICE_UNAVAILABLE if isinstance(exc, gexc.GoogleAPIError) else Codes.INTERNAL_ERROR
             )
+            attempt.runner_finished = True
+        prompt_verdict = await prompt_check
+        if prompt_verdict.action != "allow":
+            ctx.message = prompt_verdict.text  # stored (and sent to the model) without the sensitive spans
+            emit(guard.guard_frame("prompt", prompt_verdict))
+        if prompt_verdict.blocked:
+            turn_error, prep = Codes.BLOCKED_BY_POLICY, None
             attempt.runner_finished = True
         if prep is not None:
             models = chat_models(ctx.version)
@@ -480,6 +496,19 @@ async def run_turn(ctx: TurnContext, emit: Emit) -> None:
                     state.error_code,
                     (state.error_message or "")[:300],
                 )
+
+        if (
+            turn_error is None
+            and state.answer_text.strip()
+            and not (ctx.abort.is_set() and not attempt.runner_finished)
+        ):
+            # P2 guard (SPEC §18 "Guard"): screen the final answer before it is persisted and charged.
+            answer_verdict = await guard.sanitize_response(state.answer_text, guard_ctx)
+            if answer_verdict.action != "allow":
+                emit(guard.guard_frame("answer", answer_verdict))
+                state.answer_parts = [] if answer_verdict.blocked else [answer_verdict.text]
+            if answer_verdict.blocked:
+                turn_error = Codes.BLOCKED_BY_POLICY
 
         outcome = classify_outcome(
             abort_requested=ctx.abort.is_set(),
