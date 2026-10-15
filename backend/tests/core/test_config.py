@@ -12,8 +12,12 @@ PEM = SecretStr("-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n")
 
 def prod_defaults() -> Settings:
     """Settings built from code defaults only (no env, no .env file)."""
-    return Settings.model_construct(**{name: field.get_default(call_default_factory=True)
-                                       for name, field in Settings.model_fields.items()})
+    return Settings.model_construct(
+        **{
+            name: field.get_default(call_default_factory=True)
+            for name, field in Settings.model_fields.items()
+        }
+    )
 
 
 def test_plain_defaults_are_prod_and_fail_closed() -> None:
@@ -28,7 +32,10 @@ def test_plain_defaults_are_prod_and_fail_closed() -> None:
     assert s.firestore_emulator_host is None and s.firebase_auth_emulator_host is None
     assert s.model_chat == "gemini-3.8-flash"
     assert s.chat_model_allowlist == [
-        "gemini-3.8-flash", "gemini-3-flash-preview", "gemini-3.1-pro-preview", "gemini-2.5-pro"
+        "gemini-3.8-flash",
+        "gemini-3-flash-preview",
+        "gemini-3.1-pro-preview",
+        "gemini-2.5-pro",
     ]
 
 

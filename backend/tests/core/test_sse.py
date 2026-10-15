@@ -31,10 +31,25 @@ def test_frame_format() -> None:
 
 
 def test_models_serialize_nulls() -> None:
-    frame = sse_event("done", DoneData(conversation_id=None, message_id=None, turn_id="t1", outcome="failed",
-                                       usage=None, billing=None))
-    assert parse_frames(frame) == [("done", {"conversation_id": None, "message_id": None, "turn_id": "t1",
-                                             "outcome": "failed", "usage": None, "billing": None})]
+    frame = sse_event(
+        "done",
+        DoneData(
+            conversation_id=None, message_id=None, turn_id="t1", outcome="failed", usage=None, billing=None
+        ),
+    )
+    assert parse_frames(frame) == [
+        (
+            "done",
+            {
+                "conversation_id": None,
+                "message_id": None,
+                "turn_id": "t1",
+                "outcome": "failed",
+                "usage": None,
+                "billing": None,
+            },
+        )
+    ]
 
 
 async def collect(resp) -> bytes:

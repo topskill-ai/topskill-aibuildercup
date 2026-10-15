@@ -29,35 +29,33 @@ def doc_id(bucket: str, uid: str, window_key: str) -> str:
     return f"{bucket}__{uid}__{window_key}"
 
 
-@firestore.async_transactional
-async def _increment(tx, ref, limit: int, expires_at: datetime) -> int | None:
-    snap = await ref.get(transaction=tx)
-    count = int((snap.to_dict() or {}).get("count", 0)) if snap.exists else 0
-    if count >= limit:
-        return None
-    tx.set(ref, {"count": count + 1, "expires_at": expires_at})
-    return count + 1
+def _limited(retry_after_s: int) -> ApiError:
+    return ApiError(
+        429,
+        Codes.RATE_LIMITED,
+        "Too many requests. Please try again later.",
+        {"retry_after_s": retry_after_s},
+    )
 
 
 async def hit(bucket: str, uid: str, *, limit: int, window: Window) -> None:
-    """Count one use; raises 429 ``rate_limited`` (``detail.retry_after_s``) once ``limit`` is reached."""
+    """Count one use; raises 429 ``rate_limited`` (``detail.retry_after_s``) once ``limit`` is reached.
+
+    Lock-free and exact: one atomic ``Increment`` whose post-increment value comes back in the write
+    result (``transform_results``), so concurrent hits get distinct counts 1, 2, 3, ... and exactly
+    ``limit`` of them are admitted per window. No transaction, so no contention aborts.
+    """
     now = utcnow()
     key, end = window_bounds(now, window)
     retry_after_s = max(1, math.ceil((end - now).total_seconds()))
     if limit <= 0:
-        raise ApiError(
-            429,
-            Codes.RATE_LIMITED,
-            "Too many requests. Please try again later.",
-            {"retry_after_s": retry_after_s},
-        )
-    db = get_db()
-    ref = db.collection(Col.RATE_LIMITS).document(doc_id(bucket, uid, key))
-    result = await _increment(db.transaction(), ref, limit, end)
-    if result is None:
-        raise ApiError(
-            429,
-            Codes.RATE_LIMITED,
-            "Too many requests. Please try again later.",
-            {"retry_after_s": retry_after_s},
-        )
+        raise _limited(retry_after_s)
+    ref = get_db().collection(Col.RATE_LIMITS).document(doc_id(bucket, uid, key))
+    result = await ref.set({"count": firestore.Increment(1), "expires_at": end}, merge=True)
+    transforms = getattr(result, "transform_results", None) or []
+    if transforms:
+        count = int(transforms[0].integer_value)
+    else:  # defensive: fall back to a read (conservative under races)
+        count = int(((await ref.get()).to_dict() or {}).get("count", 0))
+    if count > limit:
+        raise _limited(retry_after_s)

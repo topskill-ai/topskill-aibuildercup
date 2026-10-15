@@ -30,8 +30,12 @@ def build_app() -> FastAPI:
 
     @app.get("/test/api-error")
     async def api_error() -> dict:
-        raise ApiError(402, Codes.VISITOR_INSUFFICIENT_POINTS, "You need 1.00 credits; you have 0.40.",
-                       {"required_cents": 100, "balance_cents": 40})
+        raise ApiError(
+            402,
+            Codes.VISITOR_INSUFFICIENT_POINTS,
+            "You need 1.00 credits; you have 0.40.",
+            {"required_cents": 100, "balance_cents": 40},
+        )
 
     @app.get("/test/boom")
     async def boom() -> dict:
@@ -96,7 +100,9 @@ async def test_unknown_route_and_method(c: httpx.AsyncClient) -> None:
 
 
 async def test_trace_id_from_cloud_trace_header(c: httpx.AsyncClient) -> None:
-    resp = await c.get("/test/trace", headers={"X-Cloud-Trace-Context": "105445aa7843bc8bf206b12000100000/1;o=1"})
+    resp = await c.get(
+        "/test/trace", headers={"X-Cloud-Trace-Context": "105445aa7843bc8bf206b12000100000/1;o=1"}
+    )
     assert resp.json()["trace_id"] == "105445aa7843bc8bf206b12000100000"
     assert resp.headers["x-trace-id"] == "105445aa7843bc8bf206b12000100000"
 
@@ -129,7 +135,9 @@ async def test_body_limit_413() -> None:
             for _ in range(5):
                 yield b"x" * 40
 
-        streamed = await client.post("/upload", content=chunks(), headers={"content-type": "application/json"})
+        streamed = await client.post(
+            "/upload", content=chunks(), headers={"content-type": "application/json"}
+        )
         assert_envelope(streamed, 413, "payload_too_large")
 
 
@@ -143,26 +151,37 @@ async def test_meta_shape(c: httpx.AsyncClient) -> None:
     resp = await c.get("/api/public/meta")
     assert resp.status_code == 200
     assert resp.json() == {
-        "chat_models": ["gemini-3.8-flash", "gemini-3-flash-preview", "gemini-3.1-pro-preview", "gemini-2.5-pro"],
+        "chat_models": [
+            "gemini-3.8-flash",
+            "gemini-3-flash-preview",
+            "gemini-3.1-pro-preview",
+            "gemini-2.5-pro",
+        ],
         "default_chat_model": "gemini-3.8-flash",
         "revenue_share_bp": 8000,
         "signup_grant_cents": 10000,
         "demo_topup_cents": 5000,
         "demo_topup_daily_limit": 5,
         "a2a_mandate_defaults": {
-            "max_amount_cents": 500, "budget_cents": 2000, "ttl_minutes": 30,
-            "max_budget_cents": 100000, "max_ttl_minutes": 1440,
+            "max_amount_cents": 500,
+            "budget_cents": 2000,
+            "ttl_minutes": 30,
+            "max_budget_cents": 100000,
+            "max_ttl_minutes": 1440,
         },
     }
 
 
 async def test_cors_preflight_preview_channel(c: httpx.AsyncClient) -> None:
     origin = "https://top-skill--pr-12-abc123.web.app"
-    resp = await c.options("/api/me", headers={
-        "Origin": origin,
-        "Access-Control-Request-Method": "POST",
-        "Access-Control-Request-Headers": "authorization,content-type,x-ap2-mandate",
-    })
+    resp = await c.options(
+        "/api/me",
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization,content-type,x-ap2-mandate",
+        },
+    )
     assert resp.status_code == 200
     assert resp.headers["access-control-allow-origin"] == origin
     assert "authorization" in resp.headers["access-control-allow-headers"].lower()
@@ -176,8 +195,9 @@ async def test_cors_allowed_origin_and_exposed_headers(c: httpx.AsyncClient) -> 
 
 
 async def test_cors_rejects_unknown_origin(c: httpx.AsyncClient) -> None:
-    resp = await c.options("/api/me", headers={
-        "Origin": "https://evil.example", "Access-Control-Request-Method": "GET"})
+    resp = await c.options(
+        "/api/me", headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "GET"}
+    )
     assert "access-control-allow-origin" not in resp.headers
 
 
@@ -197,6 +217,16 @@ def test_app_boots_with_zero_domain_modules() -> None:
 
 
 def test_error_codes_cover_spec() -> None:
-    for code in ("validation_error", "mandate_replay", "session_not_owned", "turn_timeout", "call_limit",
-                 "connection_lost", "network_error", "image_failed", "draft_failed", "record_field_type_locked"):
+    for code in (
+        "validation_error",
+        "mandate_replay",
+        "session_not_owned",
+        "turn_timeout",
+        "call_limit",
+        "connection_lost",
+        "network_error",
+        "image_failed",
+        "draft_failed",
+        "record_field_type_locked",
+    ):
         assert code in ERROR_CODES

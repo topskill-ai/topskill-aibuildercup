@@ -139,8 +139,13 @@ async def test_patch_me(c: httpx.AsyncClient) -> None:
     )
     assert resp.json()["creator_profile"] == {"headline": "Immigration consultant", "bio": "10 years."}
     assert (await c.get("/api/me", headers=headers)).json()["display_name"] == "Ana Silva"
-    for bad in ({"display_name": ""}, {"display_name": "   "}, {"display_name": "x" * 61},
-                {"creator_profile": {"headline": "x" * 81}}, {"role": "creator"}):
+    for bad in (
+        {"display_name": ""},
+        {"display_name": "   "},
+        {"display_name": "x" * 61},
+        {"creator_profile": {"headline": "x" * 81}},
+        {"role": "creator"},
+    ):
         resp = await c.patch("/api/me", json=bad, headers=headers)
         assert resp.status_code == 400 and resp.json()["code"] == "validation_error", bad
 
