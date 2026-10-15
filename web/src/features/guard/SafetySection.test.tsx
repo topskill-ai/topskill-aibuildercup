@@ -63,6 +63,8 @@ describe("SafetySection", () => {
     const counters = screen.getByTestId("guard-counters");
     expect(counters).toHaveTextContent("Messages blocked3");
     expect(counters).toHaveTextContent("Answers redacted2");
+    expect(counters).toHaveTextContent("Answers withheld0");
+    expect(screen.queryByTestId("guard-unavailable")).toBeNull();
 
     const toggle = screen.getByRole("switch", { name: /Safety screening \(Model Armor\)/ });
     expect(toggle).toHaveAttribute("aria-checked", "true");
@@ -72,5 +74,14 @@ describe("SafetySection", () => {
     expect(String(url)).toMatch(/\/api\/agents\/agt_1$/);
     expect(init?.method).toBe("PATCH");
     expect(JSON.parse(String(init?.body))).toEqual({ config: { safety_screening: false } });
+  });
+
+  it("warns when screening is on but not running on this deployment", () => {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SafetySection agent={{ ...agent, guard_active: false }} />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByTestId("guard-unavailable")).toHaveTextContent(/unavailable on this deployment/);
   });
 });

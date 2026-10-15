@@ -15,6 +15,12 @@ Policy (configurable, see ``config.Settings.guard_*``):
   redacted; any other match is only counted as ``answers_flagged`` (RAI filters on model answers gave false
   positives in the 2026-10-15 probe, e.g. ``harassment`` on a plain sentence containing a card number).
 * an ``sdp`` match without locations (and no de-identified text) cannot be redacted, so it blocks.
+
+The functions do not write counters: callers pass every verdict of a turn / call to ``stats.record`` once.
+A small in-process health tracker counts consecutive fail-open results; while it is tripped
+(``UNHEALTHY_AFTER`` in a row, e.g. the IAM grant is missing) :func:`protection_shown` is False, so the public
+badge and the creator's "Model Armor on" chip stop claiming protection. Screening is still attempted on every
+message, and the first successful check clears it.
 """
 
 from __future__ import annotations
@@ -24,7 +30,6 @@ import logging
 
 from topskill.config import get_settings
 from topskill.errors import current_trace_id
-from topskill.guard import stats
 from topskill.guard.model_armor import ModelArmorBackend
 from topskill.guard.redact import merge_spans, redact
 from topskill.guard.types import (
@@ -39,15 +44,29 @@ from topskill.guard.types import (
 
 log = logging.getLogger(__name__)
 
+UNHEALTHY_AFTER = 3  # consecutive fail-open results that hide the "protected" claims
+
 _override: GuardBackend | None = None
+_consecutive_failures = 0
 _backend: GuardBackend | None = None
 _backend_key: tuple | None = None
 
 
 def set_backend(backend: GuardBackend | None) -> None:
-    """Tests only: replace the backend (``None`` restores the configured one)."""
-    global _override
+    """Tests only: replace the backend (``None`` restores the configured one); also resets the health."""
+    global _override, _consecutive_failures
     _override = backend
+    _consecutive_failures = 0
+
+
+def _note_health(ok: bool) -> None:
+    global _consecutive_failures
+    _consecutive_failures = 0 if ok else _consecutive_failures + 1
+
+
+def healthy() -> bool:
+    """False after ``UNHEALTHY_AFTER`` consecutive fail-open results (cleared by the next good check)."""
+    return _consecutive_failures < UNHEALTHY_AFTER
 
 
 def is_active() -> bool:
@@ -89,8 +108,14 @@ async def warm_up() -> None:
 
 
 def screening_enabled(safety_screening: bool) -> bool:
-    """What the public page shows as "Protected by Model Armor"."""
+    """True when screening is attempted for an agent with this flag."""
     return bool(safety_screening) and is_active()
+
+
+def protection_shown(safety_screening: bool) -> bool:
+    """What the public page shows as "Protected by Model Armor" and the Studio as "Model Armor on":
+    screening is attempted and the recent checks did not all fail open."""
+    return screening_enabled(safety_screening) and healthy()
 
 
 def decide(kind: ScreenKind, text: str, result: ScreenResult) -> GuardVerdict:
@@ -149,8 +174,9 @@ async def _sanitize(kind: ScreenKind, text: str, ctx: GuardContext) -> GuardVerd
                 current_trace_id() or "-",
                 f"{type(exc).__name__}: {str(exc)[:300]}",
             )
-            stats.record(ctx.agent_id, kind, verdict)
+            _note_health(False)
             return verdict
+        _note_health(True)
         verdict = decide(kind, text, result)
         log.info(
             "guard_verdict kind=%s channel=%s agent_id=%s request_id=%s action=%s categories=%s "
@@ -164,7 +190,6 @@ async def _sanitize(kind: ScreenKind, text: str, ctx: GuardContext) -> GuardVerd
             ",".join(verdict.info_types) or "-",
             int((loop.time() - started) * 1000),
         )
-        stats.record(ctx.agent_id, kind, verdict)
         return verdict
     except Exception:  # a bug here must never break a turn
         log.exception("guard_internal_error kind=%s agent_id=%s", kind, ctx.agent_id)

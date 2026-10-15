@@ -1,13 +1,15 @@
 """Guard verdict counters in ``agent_stats/{agent_id}`` (SPEC §18 "Guard").
 
 Stored as flat ``guard_<key>`` fields, written only with ``firestore.Increment`` + ``set(merge=True)``
-(the §5.1 rule for agent_stats: no read, no transaction contention). Writes are fire-and-forget background
-tasks: a failed counter never affects a turn or a call.
+(the §5.1 rule for agent_stats: no read, no transaction contention). ``agent_stats/{agent_id}`` is the
+agent's hottest document, so callers collect every verdict of one turn / call and :func:`record` writes them
+in ONE fire-and-forget background task: a failed counter never affects a turn or a call.
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from typing import Any
 
 from google.cloud import firestore
@@ -56,9 +58,20 @@ async def _write(agent_id: str, deltas: dict[str, int]) -> None:
     )
 
 
-def record(agent_id: str, kind: ScreenKind, verdict: GuardVerdict) -> None:
-    """Schedule the counter update (no-op when there is nothing to count)."""
-    deltas = increments_for(kind, verdict)
+def merged_increments(screens: Iterable[tuple[ScreenKind, GuardVerdict | None]]) -> dict[str, int]:
+    """Summed counter deltas of several verdicts (``None`` entries are skipped)."""
+    out: dict[str, int] = {}
+    for kind, verdict in screens:
+        if verdict is None:
+            continue
+        for key, value in increments_for(kind, verdict).items():
+            out[key] = out.get(key, 0) + value
+    return out
+
+
+def record(agent_id: str, screens: Iterable[tuple[ScreenKind, GuardVerdict | None]]) -> None:
+    """Schedule ONE counter update for all verdicts of a turn / call (no-op when nothing is counted)."""
+    deltas = merged_increments(screens)
     if not deltas or not agent_id:
         return
     try:

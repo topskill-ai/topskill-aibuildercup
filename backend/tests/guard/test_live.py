@@ -44,3 +44,29 @@ async def test_card_number_in_answer_is_redacted(real_guard) -> None:
     assert verdict.screened and verdict.redacted, verdict
     assert "4111 1111 1111 1111" not in verdict.text
     assert "[REDACTED:CREDIT_CARD_NUMBER]" in verdict.text
+
+
+async def test_a2a_data_part_injection_is_blocked(real_guard) -> None:
+    from topskill.guard import screen_a2a_message
+
+    message = {"messageId": "m1", "role": "ROLE_USER", "parts": [{"data": {"q": INJECTION}}]}
+    screen = await screen_a2a_message("", True, message)
+    assert screen.invalid is None and screen.verdict.screened, screen
+    assert screen.verdict.blocked and "pi_and_jailbreak" in screen.verdict.categories
+
+
+async def test_a2a_card_in_data_part_is_redacted(real_guard) -> None:
+    from topskill.guard import screen_a2a_message
+
+    message = {
+        "messageId": "m2",
+        "role": "ROLE_USER",
+        "parts": [
+            {"text": "Please check my refund."},
+            {"data": {"card": "4111 1111 1111 1111", "amount": 12}},
+        ],
+    }
+    screen = await screen_a2a_message("", True, message)
+    assert screen.verdict.screened and not screen.verdict.blocked, screen
+    assert message["parts"][1]["data"]["card"] == "[REDACTED:CREDIT_CARD_NUMBER]"
+    assert message["parts"][1]["data"]["amount"] == 12

@@ -50,7 +50,9 @@ export interface Agent { id: string; slug: string; status: "active" | "paused"; 
   capabilities: Capability[]; accent_color: AccentColor; creator_name: string; creator_headline: string;
   pricing: Pricing; config: AgentConfig; config_dirty: boolean; active_version: number; version_count: number;
   skills: Skill[]; knowledge: { files: number; ready: number; processing: number; failed: number };
-  stats: AgentStats; urls: AgentUrls; created_at: string; updated_at: string }
+  stats: AgentStats; urls: AgentUrls; created_at: string; updated_at: string;
+  /** P2 guard (SPEC §18 "Guard"): screening is effectively running (flag on, deployment has it, healthy). */
+  guard_active?: boolean }
 export interface AgentSummary { id: string; slug: string; title: string; tagline: string;
   avatar_url: string | null; accent_color: AccentColor; status: "active" | "paused"; listed: boolean;
   pricing: Pricing; active_version: number; config_dirty: boolean; stats: AgentStats; updated_at: string }

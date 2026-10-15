@@ -497,17 +497,26 @@ async def run_turn(ctx: TurnContext, emit: Emit) -> None:
                     (state.error_message or "")[:300],
                 )
 
-        if (
-            turn_error is None
-            and state.answer_text.strip()
-            and not (ctx.abort.is_set() and not attempt.runner_finished)
-        ):
-            # P2 guard (SPEC §18 "Guard"): screen the final answer before it is persisted and charged.
+        answer_verdict: guard.GuardVerdict | None = None
+        if state.answer_text.strip():
+            # P2 guard (SPEC §18 "Guard"): screen whatever answer text will be stored, whatever the outcome
+            # (a partial answer of a stopped or failed turn is stored too), before settlement.
+            would_be_ok = (
+                classify_outcome(
+                    abort_requested=ctx.abort.is_set(),
+                    runner_finished=attempt.runner_finished,
+                    answer_text=state.answer_text,
+                    turn_error=turn_error,
+                )
+                == "ok"
+            )
             answer_verdict = await guard.sanitize_response(state.answer_text, guard_ctx)
             if answer_verdict.action != "allow":
+                # Emitting is safe after a disconnect (the queue is simply not drained); after Stop the
+                # client still replaces the partial answer on screen.
                 emit(guard.guard_frame("answer", answer_verdict))
                 state.answer_parts = [] if answer_verdict.blocked else [answer_verdict.text]
-            if answer_verdict.blocked:
+            if answer_verdict.blocked and would_be_ok:  # failed / aborted turns keep their own error
                 turn_error = Codes.BLOCKED_BY_POLICY
 
         outcome = classify_outcome(
@@ -545,6 +554,8 @@ async def run_turn(ctx: TurnContext, emit: Emit) -> None:
             )
         except Exception as exc:
             log.error("settlement_failed %s error=%r", log_extra, exc, exc_info=True)
+
+        guard.record_stats(ctx.agent.id, [("prompt", prompt_verdict), ("response", answer_verdict)])
 
         error_code = Codes.SERVICE_UNAVAILABLE if charge is None else turn_error
         if error_code:

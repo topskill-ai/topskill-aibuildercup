@@ -20,7 +20,8 @@ export function GuardCounters({ agent, className }: { agent: Agent; className?: 
     ["Messages blocked", g.prompts_blocked],
     ["Messages redacted", g.prompts_redacted],
     ["Answers screened", g.answers_screened],
-    ["Answers redacted", g.answers_redacted + g.answers_blocked],
+    ["Answers redacted", g.answers_redacted],
+    ["Answers withheld", g.answers_blocked],
     ["Skipped (screening unavailable)", g.failed_open],
   ];
   return (
@@ -55,7 +56,7 @@ export function SafetySection({ agent }: { agent: Agent }) {
             Safety
           </span>
         }
-        description="Applies immediately to web chats and A2A calls. No new version needed."
+        description="Applies immediately, no new version needed. Web chat: visitor messages and answers are screened. A2A: incoming messages are screened."
       />
       <CardBody className="space-y-5">
         <Switch
@@ -63,8 +64,13 @@ export function SafetySection({ agent }: { agent: Agent }) {
           disabled={save.isPending}
           onCheckedChange={(on) => save.mutate(on)}
           label="Safety screening (Model Armor)"
-          description="Google Cloud Model Armor checks each visitor message for prompt injection, jailbreaks and unsafe content before the model runs, and redacts sensitive data such as card numbers from messages and answers. Blocked messages are never charged."
+          description="Google Cloud Model Armor checks each incoming message for prompt injection, jailbreaks and unsafe content before the model runs, and redacts sensitive data such as card numbers. Web chat answers are also screened (A2A answers are not). Blocked messages are never charged."
         />
+        {enabled && agent.guard_active === false ? (
+          <p className="text-[13px] text-warning" data-testid="guard-unavailable">
+            Screening is unavailable on this deployment right now, so messages pass unscreened.
+          </p>
+        ) : null}
         {save.error ? <ErrorLine error={save.error} /> : null}
         <GuardCounters agent={agent} />
       </CardBody>

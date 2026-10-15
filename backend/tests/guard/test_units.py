@@ -223,11 +223,7 @@ async def test_sanitize_with_fake_backend(fake_guard: FakeGuard, recorded) -> No
     v = await sanitize_response("A normal answer.", CTX)
     assert v.action == "allow" and v.screened and not v.flagged
     assert fake_guard.kinds() == ["prompt", "prompt", "response"]
-    assert [(a, k, x.action) for a, k, x in recorded] == [
-        ("agt_test", "prompt", "block"),
-        ("agt_test", "prompt", "redact"),
-        ("agt_test", "response", "allow"),
-    ]
+    assert recorded == []  # callers record the verdicts of a turn / call once
 
 
 async def test_disabled_agent_and_empty_text_are_not_screened(fake_guard: FakeGuard, recorded) -> None:
@@ -258,7 +254,7 @@ async def test_fail_open_on_error_and_timeout(
         t0 = loop.time()
         v = await sanitize_response("[[guard-slow]]", CTX)
         assert v.failed_open and loop.time() - t0 < 2
-    assert [x.failed_open for _, _, x in recorded] == [True, True]
+    assert recorded == []
 
 
 async def test_long_text_is_clipped_for_screening(fake_guard: FakeGuard, recorded, monkeypatch) -> None:

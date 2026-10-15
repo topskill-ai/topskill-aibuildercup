@@ -274,6 +274,9 @@ class AgentOut(BaseModel):
     urls: AgentUrlsOut
     created_at: str
     updated_at: str
+    # P2 guard (SPEC §18 "Guard"): screening is effectively running for this agent (flag on, deployment has
+    # screening, recent checks not all failing open).
+    guard_active: bool = False
 
 
 class AgentSummaryOut(BaseModel):

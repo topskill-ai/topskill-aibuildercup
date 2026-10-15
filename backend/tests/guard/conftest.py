@@ -22,9 +22,13 @@ def fake_guard() -> Iterator[FakeGuard]:
 
 @pytest.fixture
 def recorded(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, ScreenKind, GuardVerdict]]:
-    """Capture stats.record calls instead of writing Firestore (unit tests)."""
+    """Capture stats.record calls instead of writing Firestore (unit tests): one entry per verdict."""
     calls: list[tuple[str, ScreenKind, GuardVerdict]] = []
-    monkeypatch.setattr(stats, "record", lambda agent_id, kind, v: calls.append((agent_id, kind, v)))
+
+    def record(agent_id, screens) -> None:
+        calls.extend((agent_id, kind, v) for kind, v in screens if v is not None)
+
+    monkeypatch.setattr(stats, "record", record)
     return calls
 
 

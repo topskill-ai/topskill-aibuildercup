@@ -172,6 +172,7 @@ else
     --basic-config-filter-enforcement=enabled --labels=app=topskill
 fi
 unset CLOUDSDK_API_ENDPOINT_OVERRIDES_MODELARMOR
+# Apply this grant BEFORE deploying an image with GUARD_BACKEND=model_armor (SPEC §18 "Guard", ship order).
 if confirm "Grant roles/modelarmor.user to ${RUNTIME_SA}?"; then
   bind_project "serviceAccount:${RUNTIME_SA}" roles/modelarmor.user
 fi

@@ -56,7 +56,7 @@ export function OverviewTab({
         <Badge variant="outline">{a2aPriceLabel(agent.pricing)}</Badge>
         <Badge variant="outline">Version {agent.active_version}</Badge>
         {agent.config.web_search_enabled ? <Badge variant="outline">Google Search on</Badge> : null}
-        {agent.config.safety_screening !== false ? <Badge variant="outline">Model Armor on</Badge> : null}
+        {agent.guard_active ? <Badge variant="outline">Model Armor on</Badge> : null}
         {agent.config.record_schema ? (
           <Badge variant="outline">Lead capture · {agent.config.record_schema.fields.length} fields</Badge>
         ) : null}

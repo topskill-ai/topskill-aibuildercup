@@ -35,7 +35,7 @@ from topskill.domain import (
     iso_z,
 )
 from topskill.errors import ApiError, Codes
-from topskill.guard import guard_stats_wire
+from topskill.guard import guard_stats_wire, protection_shown
 from topskill.repo import get_owned_agent, get_user, get_version
 from topskill.skills.service import get_skill_docs, load_skill_refs, skill_to_wire
 
@@ -575,6 +575,7 @@ async def agent_to_wire(agent: AgentDoc) -> dict:
         "urls": agent_urls(agent.slug),
         "created_at": iso_z(agent.created_at),
         "updated_at": iso_z(agent.updated_at),
+        "guard_active": protection_shown(agent.config.safety_screening),  # P2 guard (SPEC §18 "Guard")
     }
 
 

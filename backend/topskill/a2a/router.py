@@ -135,33 +135,6 @@ async def _stack(slug: str, agent: AgentDoc) -> A2AStack:
         raise ApiError(503, Codes.SERVICE_UNAVAILABLE, "This agent is temporarily unavailable.") from exc
 
 
-def message_text_parts(message: dict) -> list[dict]:
-    """The text parts of an A2A message (v1.0 ``{text}`` and v0.3 ``{kind: "text", text}``)."""
-    parts = message.get("parts")
-    return [p for p in parts or [] if isinstance(p, dict) and isinstance(p.get("text"), str)]
-
-
-async def screen_a2a_message(agent: AgentDoc, message: dict) -> guard.GuardVerdict:
-    """Screen the joined text parts; a ``redact`` verdict rewrites the parts in place (the dispatcher reads
-    the same cached body dict). Never raises."""
-    parts = message_text_parts(message)
-    texts = [p["text"] for p in parts]
-    ctx = guard.GuardContext(
-        agent_id=agent.id, channel="a2a", enabled=agent.config.safety_screening, request_id=None
-    )
-    verdict = await guard.sanitize_prompt("\n".join(texts), ctx)
-    if verdict.redacted and parts:
-        if verdict.findings:
-            for part, own in zip(parts, guard.split_findings(verdict.findings, texts, "\n"), strict=True):
-                if own:
-                    part["text"] = guard.redact(part["text"], own)
-        else:  # de-identified text without locations: keep it in the first text part
-            parts[0]["text"] = verdict.text
-            for part in parts[1:]:
-                part["text"] = ""
-    return verdict
-
-
 async def settle_blocked(call_id: str) -> None:
     """Settle a call blocked by the guard as failed (never charged)."""
     try:
@@ -236,13 +209,26 @@ async def a2a_rpc(slug: str, request: Request) -> Response:
     if not isinstance(message.get("parts"), list) or not message["parts"]:
         return rpc_error(rpc_id, -32602, 400, Codes.VALIDATION_ERROR, "Invalid params: message.parts.")
     _force_blocking(method, params)
-    # P2 guard (SPEC §18 "Guard"): screen the caller's text during the preflight; never raises. A blocked
-    # message is still reserved and then settled as failed, so the call shows up (not charged).
-    prompt_check = asyncio.ensure_future(screen_a2a_message(agent, message))
+    # P2 guard (SPEC §18 "Guard"): screen every part of the caller's message during the preflight (redacted
+    # in place); never raises. A part that cannot be screened fails closed before anything is reserved. A
+    # blocked message is still reserved and then settled as failed, so the call shows up (not charged).
+    prompt_check = asyncio.ensure_future(
+        guard.screen_a2a_message(agent.id, agent.config.safety_screening, message)
+    )
     try:
         stack = await _stack(slug, agent)  # before reserving: a build failure must not hold budget
         price = await _deps.billing().preflight_a2a(agent, mandate)
-        verdict = await prompt_check  # before the preview is stored: it must already be redacted
+        screen = await prompt_check  # before the preview is stored: it must already be redacted
+        if screen.invalid:
+            return rpc_error(
+                rpc_id,
+                -32602,
+                400,
+                Codes.VALIDATION_ERROR,
+                f"Invalid params: message.parts ({screen.invalid}; this agent screens messages and accepts "
+                "text, JSON data and text files only).",
+            )
+        verdict = screen.verdict
         call_id = await reserve_call(mandate, agent, message_id, request_preview(message), price)
     except ApiError as err:
         prompt_check.cancel()
