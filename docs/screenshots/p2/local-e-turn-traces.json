@@ -1,0 +1,334 @@
+{
+  "project": "top-skill",
+  "source": "local dev stack (ENV=dev, TRACING_ENABLED=true) exporting to Cloud Trace",
+  "traces": [
+    {
+      "label": "starter_turn",
+      "trace_id": "c78c1dc38b9fa60011deb23965678226",
+      "console_url": "https://console.cloud.google.com/traces/list?project=top-skill&tid=c78c1dc38b9fa60011deb23965678226",
+      "span_count": 16,
+      "root": "POST /api/public/agents/{slug}/chat",
+      "root_ms": 20760,
+      "spans": [
+        {
+          "name": "POST /api/public/agents/{slug}/chat",
+          "span_id": "16040924431465947528",
+          "parent": null,
+          "ms": 20760,
+          "attrs": {
+            "http.status_code": "200",
+            "http.route": "/api/public/agents/{slug}/chat"
+          }
+        },
+        {
+          "name": "topskill.chat.turn",
+          "span_id": "17751720125270805600",
+          "parent": "16040924431465947528",
+          "ms": 20737,
+          "attrs": {
+            "topskill.conversation_id": "cnv_aa050f8022b59a4d6f20",
+            "topskill.model": "gemini-3.8-flash",
+            "topskill.agent_version": "1",
+            "topskill.outcome": "ok",
+            "topskill.turn_id": "t_da73e2b2604b47dce6cf3871c8857d1f",
+            "topskill.tool_calls": "2",
+            "topskill.conversation_new": "true",
+            "topskill.slug": "visa-advisor",
+            "topskill.web_searches": "0",
+            "topskill.charged_cents": "0",
+            "topskill.knowledge_searches": "1",
+            "topskill.channel": "web",
+            "topskill.latency_ms": "20737.4",
+            "topskill.agent_id": "agt_3008d175f0663cf0c7bf",
+            "topskill.request_id": "turn_b981afd915e63215200e2f20e89e02dc",
+            "topskill.ttft_ms": "17043.3"
+          }
+        },
+        {
+          "name": "POST",
+          "span_id": "11832493115633488519",
+          "parent": "17751720125270805600",
+          "ms": 1429,
+          "attrs": {
+            "http.status_code": "200"
+          }
+        },
+        {
+          "name": "invocation",
+          "span_id": "4842604828961635317",
+          "parent": "17751720125270805600",
+          "ms": 17680,
+          "attrs": {}
+        },
+        {
+          "name": "invoke_agent agent_visa_advisor",
+          "span_id": "636022392047609908",
+          "parent": "4842604828961635317",
+          "ms": 17677,
+          "attrs": {
+            "gen_ai.agent.name": "agent_visa_advisor",
+            "gen_ai.operation.name": "invoke_agent"
+          }
+        },
+        {
+          "name": "call_llm",
+          "span_id": "6506925655901756368",
+          "parent": "636022392047609908",
+          "ms": 12892,
+          "attrs": {
+            "gen_ai.request.model": "gemini-3.8-flash"
+          }
+        },
+        {
+          "name": "generate_content gemini-3.8-flash",
+          "span_id": "14560271001722622175",
+          "parent": "6506925655901756368",
+          "ms": 5661,
+          "attrs": {
+            "gen_ai.request.model": "gemini-3.8-flash",
+            "gen_ai.operation.name": "generate_content",
+            "gen_ai.agent.name": "agent_visa_advisor"
+          }
+        },
+        {
+          "name": "POST",
+          "span_id": "6452381888713966863",
+          "parent": "14560271001722622175",
+          "ms": 3550,
+          "attrs": {
+            "http.status_code": "200"
+          }
+        },
+        {
+          "name": "execute_tool save_record",
+          "span_id": "13018097681884725878",
+          "parent": "636022392047609908",
+          "ms": 30,
+          "attrs": {
+            "gen_ai.agent.name": "agent_visa_advisor",
+            "gen_ai.operation.name": "execute_tool",
+            "gen_ai.tool.name": "save_record"
+          }
+        },
+        {
+          "name": "execute_tool search_knowledge",
+          "span_id": "13861658932031062010",
+          "parent": "636022392047609908",
+          "ms": 6153,
+          "attrs": {
+            "gen_ai.operation.name": "execute_tool",
+            "gen_ai.tool.name": "search_knowledge",
+            "gen_ai.agent.name": "agent_visa_advisor"
+          }
+        },
+        {
+          "name": "POST",
+          "span_id": "587922244995714995",
+          "parent": "13861658932031062010",
+          "ms": 5929,
+          "attrs": {
+            "http.status_code": "200"
+          }
+        },
+        {
+          "name": "execute_tool (merged)",
+          "span_id": "16699119076125791545",
+          "parent": "636022392047609908",
+          "ms": 0,
+          "attrs": {
+            "gen_ai.operation.name": "execute_tool",
+            "gen_ai.tool.name": "(merged tools)"
+          }
+        },
+        {
+          "name": "call_llm",
+          "span_id": "6454666323045882116",
+          "parent": "636022392047609908",
+          "ms": 4728,
+          "attrs": {
+            "gen_ai.request.model": "gemini-3.8-flash"
+          }
+        },
+        {
+          "name": "generate_content gemini-3.8-flash",
+          "span_id": "13342240384600640289",
+          "parent": "6454666323045882116",
+          "ms": 4521,
+          "attrs": {
+            "gen_ai.agent.name": "agent_visa_advisor",
+            "gen_ai.operation.name": "generate_content",
+            "gen_ai.request.model": "gemini-3.8-flash"
+          }
+        },
+        {
+          "name": "POST",
+          "span_id": "13093689106957323436",
+          "parent": "13342240384600640289",
+          "ms": 2489,
+          "attrs": {
+            "http.status_code": "200"
+          }
+        },
+        {
+          "name": "POST",
+          "span_id": "6437160846567308546",
+          "parent": "17751720125270805600",
+          "ms": 1420,
+          "attrs": {
+            "http.status_code": "200"
+          }
+        }
+      ]
+    },
+    {
+      "label": "blocked_injection",
+      "trace_id": "6f759d510998a30fa03bbba1352201fa",
+      "console_url": "https://console.cloud.google.com/traces/list?project=top-skill&tid=6f759d510998a30fa03bbba1352201fa",
+      "span_count": 3,
+      "root": "POST /api/public/agents/{slug}/chat",
+      "root_ms": 1500,
+      "spans": [
+        {
+          "name": "POST /api/public/agents/{slug}/chat",
+          "span_id": "8253355376363424544",
+          "parent": null,
+          "ms": 1500,
+          "attrs": {
+            "http.status_code": "200",
+            "http.route": "/api/public/agents/{slug}/chat"
+          }
+        },
+        {
+          "name": "topskill.chat.turn",
+          "span_id": "177105282975366851",
+          "parent": "8253355376363424544",
+          "ms": 1475,
+          "attrs": {
+            "topskill.conversation_new": "false",
+            "topskill.latency_ms": "1475.1",
+            "topskill.charged_cents": "0",
+            "topskill.error_code": "blocked_by_policy",
+            "topskill.tool_calls": "0",
+            "topskill.knowledge_searches": "0",
+            "topskill.channel": "web",
+            "topskill.web_searches": "0",
+            "topskill.agent_id": "agt_3008d175f0663cf0c7bf",
+            "topskill.model": "gemini-3.8-flash",
+            "topskill.agent_version": "1",
+            "topskill.conversation_id": "cnv_aa050f8022b59a4d6f20",
+            "topskill.outcome": "failed",
+            "topskill.request_id": "turn_7623233c7c85c3e282ac06a19fd998b5",
+            "topskill.turn_id": "t_35777a6b788defb423eb5596101b42d1",
+            "topskill.slug": "visa-advisor"
+          }
+        },
+        {
+          "name": "POST",
+          "span_id": "8341145453589432395",
+          "parent": "177105282975366851",
+          "ms": 1452,
+          "attrs": {
+            "http.status_code": "200"
+          }
+        }
+      ]
+    },
+    {
+      "label": "voice_call",
+      "trace_id": "c909c04e11b28272a949203a8e3c8dee",
+      "console_url": "https://console.cloud.google.com/traces/list?project=top-skill&tid=c909c04e11b28272a949203a8e3c8dee",
+      "span_count": 3,
+      "root": "WS /api/public/agents/{slug}/voice",
+      "root_ms": 45615,
+      "spans": [
+        {
+          "name": "WS /api/public/agents/{slug}/voice",
+          "span_id": "3859365827722324136",
+          "parent": null,
+          "ms": 45615,
+          "attrs": {
+            "http.status_code": "200",
+            "http.route": "/api/public/agents/{slug}/voice"
+          }
+        },
+        {
+          "name": "POST",
+          "span_id": "3074814125199508684",
+          "parent": "3859365827722324136",
+          "ms": 5091,
+          "attrs": {
+            "http.status_code": "200"
+          }
+        },
+        {
+          "name": "POST",
+          "span_id": "11510500720909859272",
+          "parent": "3859365827722324136",
+          "ms": 43866,
+          "attrs": {
+            "http.status_code": "200"
+          }
+        }
+      ]
+    },
+    {
+      "label": "ask_your_data",
+      "trace_id": "ba14262936e12e6cf98c3849241128fd",
+      "console_url": "https://console.cloud.google.com/traces/list?project=top-skill&tid=ba14262936e12e6cf98c3849241128fd",
+      "span_count": 6,
+      "root": "POST /api/analytics/ask",
+      "root_ms": 18620,
+      "spans": [
+        {
+          "name": "POST /api/analytics/ask",
+          "span_id": "6416481857006382266",
+          "parent": null,
+          "ms": 18620,
+          "attrs": {
+            "http.status_code": "200",
+            "http.route": "/api/analytics/ask"
+          }
+        },
+        {
+          "name": "POST",
+          "span_id": "3284797920987760573",
+          "parent": "6416481857006382266",
+          "ms": 13795,
+          "attrs": {
+            "http.status_code": "200"
+          }
+        },
+        {
+          "name": "BigQuery.job.begin",
+          "span_id": "9562618493779066745",
+          "parent": "6416481857006382266",
+          "ms": 791,
+          "attrs": {}
+        },
+        {
+          "name": "BigQuery.job.begin",
+          "span_id": "17149673449286058709",
+          "parent": "6416481857006382266",
+          "ms": 860,
+          "attrs": {}
+        },
+        {
+          "name": "BigQuery.getQueryResults",
+          "span_id": "419217719652429908",
+          "parent": "6416481857006382266",
+          "ms": 603,
+          "attrs": {}
+        },
+        {
+          "name": "POST",
+          "span_id": "2962591602653177361",
+          "parent": "6416481857006382266",
+          "ms": 2366,
+          "attrs": {
+            "http.status_code": "200"
+          }
+        }
+      ]
+    }
+  ]
+}

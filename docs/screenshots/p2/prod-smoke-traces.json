@@ -1,0 +1,273 @@
+{
+  "project": "top-skill",
+  "filter": "resource.type=\"cloud_run_revision\" AND resource.labels.revision_name=\"topskill-api-00008-c2h\" AND httpRequest.requestUrl:\"run.app\" AND timestamp>=\"2026-10-15T11:49:20Z\" AND timestamp<=\"2026-10-15T11:49:45Z\"",
+  "requests": 17,
+  "requests_with_app_spans": 12,
+  "traces": [
+    {
+      "time": "2026-10-15T11:49:26.717160Z",
+      "request": "GET /health",
+      "status": 200,
+      "trace_id": "05982231ce8c99c6a5e1e16d2a85dcde",
+      "spans": [
+        {
+          "name": "/health",
+          "kind": null,
+          "attrs": {
+            "faas.version": "topskill-api-00008-c2h-bcsqwcb7am"
+          }
+        },
+        {
+          "name": "GET /health",
+          "kind": "RPC_SERVER",
+          "attrs": {
+            "service.version": "49f061d",
+            "http.status_code": "200",
+            "http.route": "/health",
+            "faas.version": "topskill-api-00008-c2h"
+          }
+        }
+      ]
+    },
+    {
+      "time": "2026-10-15T11:49:27.542448Z",
+      "request": "OPTIONS /api/me",
+      "status": 200,
+      "trace_id": "51f4fdad20e1f259baf500acc85fb026",
+      "spans": []
+    },
+    {
+      "time": "2026-10-15T11:49:28.391758Z",
+      "request": "OPTIONS /api/me",
+      "status": 200,
+      "trace_id": "d8a1bac8f635c8671e65ecc02ebbaf9f",
+      "spans": []
+    },
+    {
+      "time": "2026-10-15T11:49:29.210068Z",
+      "request": "OPTIONS /api/me",
+      "status": 200,
+      "trace_id": "4561e7be262143cec6970f59988703ce",
+      "spans": []
+    },
+    {
+      "time": "2026-10-15T11:49:30.044664Z",
+      "request": "OPTIONS /api/me",
+      "status": 400,
+      "trace_id": "0ff456ff2720e8d9348921db0c573137",
+      "spans": []
+    },
+    {
+      "time": "2026-10-15T11:49:30.859525Z",
+      "request": "GET /api/public/meta",
+      "status": 200,
+      "trace_id": "8fc7cc5a5cf4d9642a627dfa825c87f1",
+      "spans": []
+    },
+    {
+      "time": "2026-10-15T11:49:31.878690Z",
+      "request": "GET /api/me",
+      "status": 401,
+      "trace_id": "0d68de44d8dd8bcfd40bfb42a55a264f",
+      "spans": [
+        {
+          "name": "GET /api/me",
+          "kind": "RPC_SERVER",
+          "attrs": {
+            "faas.version": "topskill-api-00008-c2h",
+            "service.version": "49f061d",
+            "http.status_code": "401",
+            "http.route": "/api/me"
+          }
+        }
+      ]
+    },
+    {
+      "time": "2026-10-15T11:49:32.718744Z",
+      "request": "GET /api/me",
+      "status": 401,
+      "trace_id": "50461e70441a82fe4eff5412b1fa7aca",
+      "spans": [
+        {
+          "name": "GET /api/me",
+          "kind": "RPC_SERVER",
+          "attrs": {
+            "service.version": "49f061d",
+            "http.status_code": "401",
+            "faas.version": "topskill-api-00008-c2h",
+            "http.route": "/api/me"
+          }
+        }
+      ]
+    },
+    {
+      "time": "2026-10-15T11:49:33.515424Z",
+      "request": "GET /.well-known/jwks.json",
+      "status": 200,
+      "trace_id": "40c7339cab52eafd73edaa80ce7cf087",
+      "spans": [
+        {
+          "name": "GET /.well-known/jwks.json",
+          "kind": "RPC_SERVER",
+          "attrs": {
+            "http.route": "/.well-known/jwks.json",
+            "faas.version": "topskill-api-00008-c2h",
+            "http.status_code": "200",
+            "service.version": "49f061d"
+          }
+        }
+      ]
+    },
+    {
+      "time": "2026-10-15T11:49:34.339332Z",
+      "request": "GET /api/public/agents",
+      "status": 200,
+      "trace_id": "f22e85b9327094fc0b31e141bc2a4542",
+      "spans": [
+        {
+          "name": "GET /api/public/agents",
+          "kind": "RPC_SERVER",
+          "attrs": {
+            "faas.version": "topskill-api-00008-c2h",
+            "service.version": "49f061d",
+            "http.route": "/api/public/agents",
+            "http.status_code": "200"
+          }
+        }
+      ]
+    },
+    {
+      "time": "2026-10-15T11:49:35.301540Z",
+      "request": "GET /api/public/agents?q=visa",
+      "status": 200,
+      "trace_id": "32ff45bfc3997578abcdf6edecf43330",
+      "spans": [
+        {
+          "name": "GET /api/public/agents",
+          "kind": "RPC_SERVER",
+          "attrs": {
+            "faas.version": "topskill-api-00008-c2h",
+            "service.version": "49f061d",
+            "http.status_code": "200",
+            "http.route": "/api/public/agents"
+          }
+        }
+      ]
+    },
+    {
+      "time": "2026-10-15T11:49:36.136441Z",
+      "request": "GET /api/public/agents?limit=1",
+      "status": 200,
+      "trace_id": "fd046f91a2dd48d8ef7f2440d9247982",
+      "spans": [
+        {
+          "name": "GET /api/public/agents",
+          "kind": "RPC_SERVER",
+          "attrs": {
+            "faas.version": "topskill-api-00008-c2h",
+            "http.route": "/api/public/agents",
+            "http.status_code": "200",
+            "service.version": "49f061d"
+          }
+        }
+      ]
+    },
+    {
+      "time": "2026-10-15T11:49:37.016293Z",
+      "request": "GET /api/public/agents?limit=1&cursor=eyJpZCI6ImFndF80ZWE2OTA0ODk2ODNjYmI5MDllNCIsIn",
+      "status": 200,
+      "trace_id": "a7d3327eb842ee0f1d9b35bd6177fab5",
+      "spans": [
+        {
+          "name": "/api/public/agents",
+          "kind": null,
+          "attrs": {
+            "faas.version": "topskill-api-00008-c2h-bcsqwcb7am"
+          }
+        },
+        {
+          "name": "GET /api/public/agents",
+          "kind": "RPC_SERVER",
+          "attrs": {
+            "http.status_code": "200",
+            "faas.version": "topskill-api-00008-c2h",
+            "http.route": "/api/public/agents",
+            "service.version": "49f061d"
+          }
+        }
+      ]
+    },
+    {
+      "time": "2026-10-15T11:49:37.881510Z",
+      "request": "GET /api/public/a2a/directory",
+      "status": 200,
+      "trace_id": "45d8cd418cc1ee9fa9acc811a4371bf2",
+      "spans": [
+        {
+          "name": "GET /api/public/a2a/directory",
+          "kind": "RPC_SERVER",
+          "attrs": {
+            "http.status_code": "200",
+            "http.route": "/api/public/a2a/directory",
+            "service.version": "49f061d",
+            "faas.version": "topskill-api-00008-c2h"
+          }
+        }
+      ]
+    },
+    {
+      "time": "2026-10-15T11:49:38.720473Z",
+      "request": "GET /api/public/a2a/directory?q=visa",
+      "status": 200,
+      "trace_id": "1e963972c66dcdde5f96cd6bed9db335",
+      "spans": [
+        {
+          "name": "GET /api/public/a2a/directory",
+          "kind": "RPC_SERVER",
+          "attrs": {
+            "service.version": "49f061d",
+            "faas.version": "topskill-api-00008-c2h",
+            "http.route": "/api/public/a2a/directory",
+            "http.status_code": "200"
+          }
+        }
+      ]
+    },
+    {
+      "time": "2026-10-15T11:49:39.741248Z",
+      "request": "GET /api/public/agents/contract-reviewer",
+      "status": 200,
+      "trace_id": "aa3423d39448645ad1771dd2d4c62e28",
+      "spans": [
+        {
+          "name": "GET /api/public/agents/{slug}",
+          "kind": "RPC_SERVER",
+          "attrs": {
+            "http.route": "/api/public/agents/{slug}",
+            "faas.version": "topskill-api-00008-c2h",
+            "http.status_code": "200",
+            "service.version": "49f061d"
+          }
+        }
+      ]
+    },
+    {
+      "time": "2026-10-15T11:49:40.582014Z",
+      "request": "GET /a2a/contract-reviewer/.well-known/agent-card.json",
+      "status": 200,
+      "trace_id": "29940f98ef290065406597932eea8a0d",
+      "spans": [
+        {
+          "name": "GET /a2a/{slug}/.well-known/agent-card.json",
+          "kind": "RPC_SERVER",
+          "attrs": {
+            "service.version": "49f061d",
+            "http.route": "/a2a/{slug}/.well-known/agent-card.json",
+            "faas.version": "topskill-api-00008-c2h",
+            "http.status_code": "200"
+          }
+        }
+      ]
+    }
+  ]
+}
