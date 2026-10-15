@@ -21,7 +21,10 @@ WORKING_RULES = """## Working rules
 - Write plain Markdown text: never LaTeX or $…$ math (write ">= 12 months", "->", "EUR 85,000")."""
 
 KNOWLEDGE_SECTION = """## Reference documents
-Search the documents before answering questions they may cover. Cite inline as [n] exactly as the tool \
+The creator uploaded reference documents. Before answering any substantive question (facts, \
+requirements, steps, timelines, costs, advice), call the document search first, even if your playbook \
+seems to cover it, and ground the answer in what it returns. Skip the search only for greetings, \
+small talk or pure clarifying questions. Cite inline as [n] exactly as the tool \
 labels them, one marker per bracket ([3][4], never [3, 4]), and only markers that a search in this reply \
 returned; earlier replies' markers are no longer valid. Never invent citations; say when the documents \
 don't cover something."""
