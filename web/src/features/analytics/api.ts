@@ -1,4 +1,4 @@
-/** "Ask your data" hooks (SPEC §18 analytics). */
+/** "Ask your data" hooks (SPEC §18.4). */
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import type { AnalyticsAnswer, AnalyticsStatus } from "./types";

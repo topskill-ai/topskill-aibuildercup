@@ -1,4 +1,4 @@
-"""Model Armor REST backend (SPEC §18 "Guard").
+"""Model Armor REST backend (SPEC §18.2).
 
 Calls the **regional** endpoint ``https://modelarmor.{location}.rep.googleapis.com`` (the global endpoint
 does not serve regional templates) with ADC credentials (``roles/modelarmor.user`` on the runtime service

@@ -446,7 +446,7 @@ async def run_turn(ctx: TurnContext, emit: Emit) -> None:
         turn_error: str | None = None
         attempt = _Attempt(state=state)
         prep: _Prepared | None = None
-        # P2 guard (SPEC §18 "Guard"): screen the visitor message while the turn is prepared; never raises.
+        # P2 guard (SPEC §18.2): screen the visitor message while the turn is prepared; never raises.
         guard_ctx = guard.GuardContext(
             agent_id=ctx.agent.id,
             channel="web",
@@ -500,7 +500,7 @@ async def run_turn(ctx: TurnContext, emit: Emit) -> None:
 
         answer_verdict: guard.GuardVerdict | None = None
         if state.answer_text.strip():
-            # P2 guard (SPEC §18 "Guard"): screen whatever answer text will be stored, whatever the outcome
+            # P2 guard (SPEC §18.2): screen whatever answer text will be stored, whatever the outcome
             # (a partial answer of a stopped or failed turn is stored too), before settlement.
             would_be_ok = (
                 classify_outcome(

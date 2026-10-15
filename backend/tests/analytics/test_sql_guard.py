@@ -1,4 +1,4 @@
-"""SQL guard: only one read-only SELECT over the CTE names gets through (SPEC §18 analytics)."""
+"""SQL guard: only one read-only SELECT over the CTE names gets through (SPEC §18.4)."""
 
 from __future__ import annotations
 

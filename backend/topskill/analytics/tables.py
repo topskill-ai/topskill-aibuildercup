@@ -1,4 +1,4 @@
-"""Warehouse tables of the creator analytics feature (SPEC §18 analytics).
+"""Warehouse tables of the creator analytics feature (SPEC §18.4).
 
 Every table is a copy of one Firestore collection (or of the model messages of every conversation), keyed
 by the Firestore doc id, partitioned by ``DATE(created_at)`` and clustered by ``owner_uid``. The physical

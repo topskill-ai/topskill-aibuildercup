@@ -359,9 +359,15 @@ class RouteNameMiddleware:
         self.app = app
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
-        if scope.get("type") != "http":
+        kind = scope.get("type")
+        if kind not in ("http", "websocket"):
             await self.app(scope, receive, send)
             return
+        # A WebSocket (the voice call, SPEC §18.1) is named once it is accepted or closed: "WS /route".
+        method = "WS" if kind == "websocket" else scope.get("method", "HTTP")
+        first_messages = (
+            ("websocket.accept", "websocket.close") if kind == "websocket" else ("http.response.start",)
+        )
         span = trace.get_current_span()
         named = False
 
@@ -372,11 +378,11 @@ class RouteNameMiddleware:
             named = True
             template = route_template(scope)
             if template:
-                span.update_name(f"{scope.get('method', 'HTTP')} {template}")
+                span.update_name(f"{method} {template}")
                 span.set_attribute("http.route", template)
 
         async def send_wrapper(message: Any) -> None:
-            if message.get("type") == "http.response.start":
+            if message.get("type") in first_messages:
                 name_span()
             await send(message)
 

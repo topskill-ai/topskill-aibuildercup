@@ -1,4 +1,4 @@
-"""Guard and wrapper for model-written SQL (SPEC §18 analytics).
+"""Guard and wrapper for model-written SQL (SPEC §18.4).
 
 The model writes ONE GoogleSQL ``SELECT`` over the fixed CTE names of :mod:`.tables`. Before anything
 reaches BigQuery the server:

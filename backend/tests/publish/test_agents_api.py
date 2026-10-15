@@ -49,7 +49,7 @@ AGENT_KEYS = {
     "urls",
     "created_at",
     "updated_at",
-    "guard_active",  # P2 guard (SPEC §18 "Guard")
+    "guard_active",  # P2 guard (SPEC §18.2)
 }
 SUMMARY_KEYS = {
     "id",

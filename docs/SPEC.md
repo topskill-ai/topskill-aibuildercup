@@ -1,4 +1,4 @@
-# TopSkill — Implementation Spec (P0 + P1)
+# TopSkill — Implementation Spec (P0 + P1, P2 in §18)
 
 Status: **frozen for the 2026-10-16/17 build** (revision 2, 2026-10-15: review fixes applied, see §17). Changes to a contract in this file must be made in this file first (one PR, announced to every owner), then in code.
 
@@ -7,7 +7,7 @@ Status: **frozen for the 2026-10-16/17 build** (revision 2, 2026-10-15: review f
 - Repo: `topskillopen/topskill` (this repo). English only: code, comments, docs, UI copy.
 - Clean-room rule: TopSkill re-expresses product rules learned from an earlier product. **Never copy code from any other repo.** The probe scripts under `/private/tmp/claude-501/topskill-probes/` are ours and may be read for API shapes.
 - GCP project `top-skill` (number `920441209758`), region `asia-southeast1`; Gemini on Vertex AI location `global`.
-- Scope: **P0 + P1 only**. P2 (Gemini Live voice, Model Armor, Cloud Trace, BigQuery NL analytics) is out of scope; do not add hooks for it.
+- Scope: **P0 + P1** in §1–§17. P2 (Gemini Live voice, Model Armor, Cloud Trace, BigQuery NL analytics) was approved by the owner on 2026-10-15 and is specified in §18 (revision 4).
 - Owner tags used throughout: `[core] [publish] [chat] [billing] [knowledge] [records] [a2a] [web-core] [web-visitor] [web-studio] [web-assistant] [deploy]`.
 
 > **Owner decisions 2026-10-15 (override anything below that conflicts):**
@@ -1979,6 +1979,8 @@ Deliverables this round: this section, a "Scaling" section in `README.md`, and o
 
 ## 17. Revision log
 
+**Revision 4 (2026-10-15, P2 integration)** — §18 added: voice mode (18.1), Model Armor guard (18.2), Cloud Trace observability (18.3), "Ask your data" analytics (18.4), merged from lanes `voice`, `guard`, `trace`, `analytics`. P0/P1 contracts are unchanged except for additive fields: `AgentConfig.safety_screening`, `Agent.guard_active`, `AgentStats.guard`, `PublicAgentCard.features.safety_screening`, the `guard` SSE event and error code `blocked_by_policy` (§18.2); `trace_id` values are now Cloud Trace ids when tracing is on (§18.3).
+
 **Revision 3 (2026-10-17, integration)** — as-built contract updates from the lane reports:
 - D1 applied to §5.1/§6.4/§10.1/§14.2 (File Search fields, write-once `knowledge_store`, backend protocol, DELETE 503, additive knowledge exports, `knowledge.status` collection-group field override).
 - Dashboard income summed in memory; no Firestore aggregation queries (§3.1, §5.3).
@@ -2004,6 +2006,29 @@ Deliverables this round: this section, a "Scaling" section in `README.md`, and o
 ---
 
 ## 18. P2 features
+
+P2 was approved by the owner on 2026-10-15 (it was out of scope in revisions 1–3). Each P2 feature lives in its own package / feature folder, is behind a feature flag, and keeps every P0/P1 behaviour unchanged when switched off or when its Google service is unavailable. The four features were built in parallel lanes and merged in revision 4 (§17).
+
+| § | Feature | Package (backend / web) | Flag (prod value) | Google service | When the service fails |
+|---|---|---|---|---|---|
+| 18.1 | Voice mode | `topskill/voice/` / `features/voice/` | `VOICE_ENABLED` (`true`) | Gemini Live on Vertex AI (`global`, fallback `us-central1`) | mic hidden (`/api/public/voice/config` fails or `enabled=false`) or the call ends with 503; text chat unaffected |
+| 18.2 | Guard (Model Armor) | `topskill/guard/` / `features/guard/` | `GUARD_BACKEND` (`model_armor`) + per-agent `config.safety_screening` | Model Armor (`asia-southeast1`) | fail-open: messages are allowed, badge hidden after 3 failed checks; A2A parts that cannot be screened fail closed (400) |
+| 18.3 | Observability | `topskill/observability/` / – | `TRACING_ENABLED` (`true`) | Cloud Trace via Telemetry API (OTLP/HTTP) | spans dropped, export failure logged every 5 min; requests unaffected |
+| 18.4 | Ask your data | `topskill/analytics/` / `features/analytics/` | `ANALYTICS_ENABLED` (`true`) | BigQuery (`asia-southeast1`) + Gemini on Vertex | `/api/analytics/ask` 503, the dashboard card shows an error with retry; the rest of the dashboard unaffected |
+
+**Ship step (apply before deploying the merged image).** IAM grants and resources, all in `deploy/scripts/provision.sh` (none were applied by the lanes):
+1. `roles/modelarmor.user` on project `top-skill` → `topskill-api@top-skill.iam.gserviceaccount.com` (§18.2; **before** the image with `GUARD_BACKEND=model_armor`).
+2. `roles/telemetry.tracesWriter` on project `top-skill` → same SA (§18.3).
+3. `roles/bigquery.jobUser` on project `top-skill` and `roles/bigquery.dataEditor` on dataset `top-skill:topskill_analytics` → same SA; service account `topskill-scheduler@top-skill.iam.gserviceaccount.com` (no roles) and Cloud Scheduler job `topskill-analytics-sync` (§18.4).
+4. Voice needs nothing new (`roles/aiplatform.user` is already granted, §13.1).
+New env vars are appended to `deploy/env/prod.env.yaml` (`VOICE_*`, `GUARD_*`, `TRACING_*`/`TRACE_*`, `ANALYTICS_*`).
+
+**How the features meet.**
+- Voice × guard: voice rounds are **not** screened by Model Armor in this round (the Live API streams audio both ways; there is no text to hold back before the model hears it). The visitor's transcript and the spoken answer are stored unscreened, and the agent page's "Protected by Model Armor" badge refers to text chat and A2A. Screening the stored transcripts after each round is a follow-up.
+- Voice × observability: the voice WebSocket is sampled as a turn route (`*/voice`) and appears as one long server span `WS /api/public/agents/{slug}/voice` (send/receive spans are excluded, so audio frames add no spans; `tests/observability/test_voice_span.py`); there is no per-round span yet, so the tool calls of a voice call show up as child spans (e.g. the File Search `httpx` request) of that one WebSocket span.
+- Guard × observability: Model Armor calls go through `httpx`, so each screening is an httpx client span inside the turn / A2A call trace; verdicts are not span attributes (they are logged as `guard_verdict` with the same trace id).
+- Analytics × voice / guard: voice rounds are ordinary model messages, so they are copied to `fs_rounds` like text rounds (`turn_id` prefixed `voice_`). Guard counters (`agent_stats`) are not copied to BigQuery; the Studio dashboard shows them directly.
+- Single instance: voice session registry, conversation locks, rate limits, the guard health tracker and the analytics in-process lock are per process; prod runs one Cloud Run instance (§16 lists the scale-out work).
 
 ### 18.1 Voice mode (Gemini Live) [voice]
 
@@ -2127,7 +2152,7 @@ round, and that speech after `turn_complete` still yields `interrupted`;
 `backend/scripts/voice_e2e.py` is the same check against a running backend (dev or prod). Web:
 `web/src/features/voice/*.test.ts(x)`.
 
-### 18.x Guard: Model Armor protection for public agents
+### 18.2 Guard: Model Armor protection for public agents [guard]
 
 Every public agent is screened by **Google Cloud Model Armor** unless its creator turns it off. Package `backend/topskill/guard/` (owner: guard lane); web `web/src/features/guard/`.
 
@@ -2183,7 +2208,7 @@ gcloud needs `CLOUDSDK_API_ENDPOINT_OVERRIDES_MODELARMOR=https://modelarmor.asia
 
 **Design** (package `backend/topskill/observability/`):
 - `tracing.setup_tracing(app, settings)` (called at the end of `create_app()`) installs one global `TracerProvider` when `TRACING_ENABLED=true`: resource `service.name=topskill-api`, `service.version=APP_VERSION`, `gcp.project_id`, Cloud Run `faas.*`; `BatchSpanProcessor` → OTLP/HTTP (protobuf) exporter to **`https://telemetry.googleapis.com/v1/traces`** (Telemetry API) with ADC (`google.auth.default` + `AuthorizedSession`). Probe 2026-10-15: both this exporter and the deprecated `opentelemetry-exporter-gcp-trace` (Cloud Trace v2 `BatchWriteSpans`) wrote spans that were readable from the Cloud Trace v1 API; the OTLP exporter is used (recommended path, no gRPC proxy issue, same exporter ADK uses). The first span of a project provisions the `_Trace` observability bucket (≈1 minute; reads answer `404 _Trace bucket not found` until then).
-- Instrumentation: FastAPI server spans (`exclude_spans=["receive","send"]`, so an SSE stream is one span, not one per chunk; `RouteNameMiddleware` renames them to `METHOD /route/{template}` because FastAPI ≥ 0.141 wraps included routers and the stock instrumentation would name spans after the raw path) and httpx client spans (google-genai's Vertex calls, File Search calls, the Enterprise Assistant's A2A calls). Propagators: W3C `traceparent` + baggage + Google `X-Cloud-Trace-Context` (extract and inject), so a request continues Cloud Run's trace and the assistant → `/a2a/{slug}` hop stays in one trace.
+- Instrumentation: FastAPI server spans (`exclude_spans=["receive","send"]`, so an SSE stream is one span, not one per chunk; `RouteNameMiddleware` renames them to `METHOD /route/{template}` (a WebSocket: `WS /route/{template}`) because FastAPI ≥ 0.141 wraps included routers and the stock instrumentation would name spans after the raw path) and httpx client spans (google-genai's Vertex calls, File Search calls, the Enterprise Assistant's A2A calls). Propagators: W3C `traceparent` + baggage + Google `X-Cloud-Trace-Context` (extract and inject), so a request continues Cloud Run's trace and the assistant → `/a2a/{slug}` hop stays in one trace.
 - ADK's built-in spans (`invocation`, `invoke_agent`, `call_llm`, `generate_content <model>`, `execute_tool <name>`) use the global provider and nest under our turn span. Their prompt/response content capture is **off** (`ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS=false` unless `TRACE_CAPTURE_CONTENT=true`): visitor text is PII and never goes into spans. a2a-sdk's own tracing decorators are off (`OTEL_INSTRUMENTATION_A2A_SDK_ENABLED=false`, set in `topskill/__init__.py` before `a2a` is imported): they emit ~60 spans per call and leak their context into ADK's run.
 - **Turn spans** (`turns.py`): `topskill.chat.turn` wraps the chat producer in `chat/runtime.start_turn` and derives its facts from the SSE frames it emits (no tracing code inside `run_turn`); `topskill.a2a.call` wraps `TopSkillA2aExecutor.execute`, reads the route's call facts (`note_a2a_call`), every ADK event (`_after_event`) and the settlement result (`settle_call`). Attributes:
 
@@ -2232,9 +2257,7 @@ gcloud needs `CLOUDSDK_API_ENDPOINT_OVERRIDES_MODELARMOR=https://modelarmor.asia
 4. "Logs" in the span details lists the log lines of that span (prod JSON logs carry `logging.googleapis.com/trace` and `spanId`).
 Programmatic read: `curl -H "Authorization: Bearer $(gcloud auth print-access-token)" https://cloudtrace.googleapis.com/v1/projects/top-skill/traces/<trace_id>`.
 
-P2 was approved by the owner on 2026-10-15 (it was out of scope in revisions 1–3). Each P2 feature lives in its own package / feature folder, is behind a feature flag, and keeps every P0/P1 behaviour unchanged when switched off or when its Google service is unavailable.
-
-### 18.1 Analytics — "Ask your data" (BigQuery natural-language analytics) [analytics]
+### 18.4 Analytics — "Ask your data" (BigQuery natural-language analytics) [analytics]
 
 Creators ask questions about their own business in plain English on the Studio dashboard ("Which agent earned the most from A2A this week?"). Gemini writes one BigQuery SELECT, the server runs it over the creator's rows only, and Gemini explains the result in 1–3 sentences. Code: `backend/topskill/analytics/`, `web/src/features/analytics/`.
 

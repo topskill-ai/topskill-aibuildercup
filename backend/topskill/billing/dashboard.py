@@ -60,7 +60,7 @@ def stats_wire(data: dict[str, Any] | None) -> dict[str, Any]:
     out: dict[str, Any] = {key: int(data.get(key) or 0) for key in STATS_FIELDS}
     last = data.get("last_activity_at")
     out["last_activity_at"] = iso_z(last) if isinstance(last, datetime) else None
-    out["guard"] = guard_stats_wire(data)  # P2 guard (SPEC §18 "Guard")
+    out["guard"] = guard_stats_wire(data)  # P2 guard (SPEC §18.2)
     return out
 
 

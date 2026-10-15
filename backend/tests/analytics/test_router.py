@@ -1,4 +1,4 @@
-"""Analytics endpoints with a fake warehouse/planner (SPEC §18 analytics)."""
+"""Analytics endpoints with a fake warehouse/planner (SPEC §18.4)."""
 
 from __future__ import annotations
 

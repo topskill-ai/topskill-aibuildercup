@@ -1,4 +1,4 @@
-"""Screening of A2A message parts (SPEC §18 "Guard").
+"""Screening of A2A message parts (SPEC §18.2).
 
 Every part the model would read is screened, not only text parts: the ADK converter turns a data part into
 an inline ``text/plain`` blob (its JSON) and a file part into inline bytes or a file URI. With screening on:

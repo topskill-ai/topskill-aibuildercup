@@ -1,4 +1,4 @@
-"""Natural-language questions over the creator's own data (SPEC §18 analytics).
+"""Natural-language questions over the creator's own data (SPEC §18.4).
 
 ``ask(question, uid)``:
 1. Gemini (structured output) writes ONE GoogleSQL SELECT over the CTE names of :mod:`.tables`, plus a

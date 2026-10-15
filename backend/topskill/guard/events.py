@@ -1,4 +1,4 @@
-"""The ``guard`` SSE event of the web chat stream (SPEC §18 "Guard").
+"""The ``guard`` SSE event of the web chat stream (SPEC §18.2).
 
 Emitted at most once per target and turn, only when a verdict changes something:
 

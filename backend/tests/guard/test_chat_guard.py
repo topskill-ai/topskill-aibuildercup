@@ -1,4 +1,4 @@
-"""Guard in the web chat turn, the A2A route and the agent APIs, on the Firestore emulator (SPEC §18 "Guard")."""
+"""Guard in the web chat turn, the A2A route and the agent APIs, on the Firestore emulator (SPEC §18.2)."""
 
 from __future__ import annotations
 

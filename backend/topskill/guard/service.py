@@ -1,4 +1,4 @@
-"""Screening entry points and policy (SPEC §18 "Guard").
+"""Screening entry points and policy (SPEC §18.2).
 
 ``sanitize_prompt`` / ``sanitize_response`` never raise: a disabled agent, ``GUARD_BACKEND=off``, empty text
 or any backend failure (timeout, HTTP error, auth error) yields an ``allow`` verdict. Failures are logged

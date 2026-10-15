@@ -1,4 +1,4 @@
-"""Live tests against real BigQuery + Gemini on Vertex (SPEC §18 analytics). Never in CI.
+"""Live tests against real BigQuery + Gemini on Vertex (SPEC §18.4). Never in CI.
 
     uv run pytest -m live tests/analytics/test_live.py
     ANALYTICS_LIVE_DATASET=topskill_analytics uv run pytest -m live tests/analytics/test_live.py -k question

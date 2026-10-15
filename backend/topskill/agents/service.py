@@ -506,7 +506,7 @@ def stats_to_wire(data: dict | None) -> dict:
     for key, value in list(out.items()):
         if key != "last_activity_at":
             out[key] = int(value or 0)
-    out["guard"] = guard_stats_wire(data)  # P2 guard (SPEC §18 "Guard")
+    out["guard"] = guard_stats_wire(data)  # P2 guard (SPEC §18.2)
     return out
 
 
@@ -575,7 +575,7 @@ async def agent_to_wire(agent: AgentDoc) -> dict:
         "urls": agent_urls(agent.slug),
         "created_at": iso_z(agent.created_at),
         "updated_at": iso_z(agent.updated_at),
-        "guard_active": protection_shown(agent.config.safety_screening),  # P2 guard (SPEC §18 "Guard")
+        "guard_active": protection_shown(agent.config.safety_screening),  # P2 guard (SPEC §18.2)
     }
 
 

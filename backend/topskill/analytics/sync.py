@@ -1,4 +1,4 @@
-"""Incremental Firestore → BigQuery sync (SPEC §18 analytics).
+"""Incremental Firestore → BigQuery sync (SPEC §18.4).
 
 Billing never writes to the warehouse (a write-through after settlement could fail after the money moved).
 Instead this job copies documents, idempotently and incrementally:

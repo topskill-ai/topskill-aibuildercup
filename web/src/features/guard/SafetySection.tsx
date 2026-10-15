@@ -1,5 +1,5 @@
 /**
- * P2 guard (SPEC §18 "Guard"): Studio → Settings "Safety" card. The switch saves at once and applies live
+ * P2 guard (SPEC §18.2): Studio → Settings "Safety" card. The switch saves at once and applies live
  * (no new version needed); the counters come from `agent.stats.guard`.
  */
 import { useMutation } from "@tanstack/react-query";

@@ -1,4 +1,4 @@
-/** Wire types of the analytics endpoints (SPEC §18 analytics). Kept here so `api/types.ts` stays untouched. */
+/** Wire types of the analytics endpoints (SPEC §18.4). Kept here so `api/types.ts` stays untouched. */
 
 export interface AnalyticsStatus {
   enabled: boolean;

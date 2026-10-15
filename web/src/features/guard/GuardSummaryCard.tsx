@@ -1,5 +1,5 @@
 /**
- * P2 guard (SPEC §18 "Guard"): Model Armor verdict counters summed over the creator's agents (dashboard).
+ * P2 guard (SPEC §18.2): Model Armor verdict counters summed over the creator's agents (dashboard).
  */
 import { ShieldCheck } from "lucide-react";
 import type { AgentSummary } from "@/api/types";

@@ -1,4 +1,4 @@
-"""Guard verdict counters in ``agent_stats/{agent_id}`` (SPEC §18 "Guard").
+"""Guard verdict counters in ``agent_stats/{agent_id}`` (SPEC §18.2).
 
 Stored as flat ``guard_<key>`` fields, written only with ``firestore.Increment`` + ``set(merge=True)``
 (the §5.1 rule for agent_stats: no read, no transaction contention). ``agent_stats/{agent_id}`` is the

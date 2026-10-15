@@ -1,5 +1,5 @@
 /**
- * P2 guard (SPEC §18 "Guard"): pure helpers for Model Armor verdicts and counters.
+ * P2 guard (SPEC §18.2): pure helpers for Model Armor verdicts and counters.
  */
 import type { AgentStats, GuardData, GuardStats } from "@/api/types";
 

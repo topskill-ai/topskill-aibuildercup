@@ -31,7 +31,7 @@ export interface RecordField { key: string; label: string; type: FieldType; desc
 export interface RecordSchema { version: 1; scope: "session"; fields: RecordField[] }
 export interface AgentConfig { soul: string; model: string; temperature: number | null;
   web_search_enabled: boolean; skill_ids: string[]; record_schema: RecordSchema | null;
-  /** P2 guard (SPEC §18 "Guard"): Model Armor screening; applies live (not versioned). */
+  /** P2 guard (SPEC §18.2): Model Armor screening; applies live (not versioned). */
   safety_screening: boolean }
 
 export interface SkillFile { path: string; size: number; mime: string; is_text: boolean }
@@ -41,7 +41,7 @@ export interface Skill { id: string; slug: string; name: string; description: st
 export interface AgentStats { rounds: number; paid_rounds: number; conversations: number;
   visitor_gross_cents: number; creator_earned_cents: number; a2a_calls: number;
   a2a_gross_cents: number; records: number; last_activity_at: string | null;
-  /** P2 guard (SPEC §18 "Guard"); optional so older payloads still type-check. */
+  /** P2 guard (SPEC §18.2); optional so older payloads still type-check. */
   guard?: GuardStats }
 export interface AgentUrls { public_page: string; a2a_card: string; a2a_endpoint: string }
 export interface Agent { id: string; slug: string; status: "active" | "paused"; listed: boolean;
@@ -51,7 +51,7 @@ export interface Agent { id: string; slug: string; status: "active" | "paused"; 
   pricing: Pricing; config: AgentConfig; config_dirty: boolean; active_version: number; version_count: number;
   skills: Skill[]; knowledge: { files: number; ready: number; processing: number; failed: number };
   stats: AgentStats; urls: AgentUrls; created_at: string; updated_at: string;
-  /** P2 guard (SPEC §18 "Guard"): screening is effectively running (flag on, deployment has it, healthy). */
+  /** P2 guard (SPEC §18.2): screening is effectively running (flag on, deployment has it, healthy). */
   guard_active?: boolean }
 export interface AgentSummary { id: string; slug: string; title: string; tagline: string;
   avatar_url: string | null; accent_color: AccentColor; status: "active" | "paused"; listed: boolean;
@@ -70,7 +70,7 @@ export interface PublicCreator { uid: string; name: string; headline: string }
 export interface PublicAgentCard { slug: string; title: string; tagline: string; avatar_url: string | null;
   accent_color: AccentColor; creator: PublicCreator; pricing: { mode: PricingMode; price_cents: number; free_rounds: number };
   features: { knowledge: boolean; web_search: boolean; records: boolean; a2a: boolean;
-    /** P2 guard (SPEC §18 "Guard"): "Protected by Model Armor" badge. */
+    /** P2 guard (SPEC §18.2): "Protected by Model Armor" badge. */
     safety_screening?: boolean };
   stats: { conversations: number; a2a_calls: number } }
 export interface PublicAgent extends PublicAgentCard { description: string; greeting: string;
@@ -176,7 +176,7 @@ export type AssistantStreamEvent =
   | { event: "error"; data: StreamErrorData }
   | { event: "done"; data: AssistantDoneData };
 
-// ---- P2 guard: Model Armor (SPEC §18 "Guard") ----
+// ---- P2 guard: Model Armor (SPEC §18.2) ----
 export interface GuardStats { prompts_screened: number; prompts_blocked: number; prompts_redacted: number;
   answers_screened: number; answers_blocked: number; answers_redacted: number; answers_flagged: number;
   failed_open: number }

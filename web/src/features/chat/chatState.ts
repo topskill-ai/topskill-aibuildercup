@@ -28,7 +28,7 @@ export interface ViewMessage {
   error?: StreamErrorData | null;
   balance_cents?: number | null;
   free_rounds_left?: number | null;
-  /** P2 guard (SPEC §18 "Guard"): Model Armor blocked or redacted this message in this page view. */
+  /** P2 guard (SPEC §18.2): Model Armor blocked or redacted this message in this page view. */
   guard?: GuardData | null;
 }
 

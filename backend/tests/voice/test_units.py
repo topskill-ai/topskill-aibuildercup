@@ -173,7 +173,7 @@ def test_voice_router_is_mounted() -> None:
     from topskill.main import create_app
 
     app = create_app()
-    assert app.state.mounted_routers[-1] == "topskill.voice.router:router"
+    assert "topskill.voice.router:router" in app.state.mounted_routers
     assert "/api/public/voice/config" in app.openapi()["paths"]
 
 

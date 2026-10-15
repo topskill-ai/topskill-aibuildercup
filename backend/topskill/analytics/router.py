@@ -1,4 +1,4 @@
-"""Analytics endpoints (SPEC §18 analytics), mounted under ``/api``.
+"""Analytics endpoints (SPEC §18.4), mounted under ``/api``.
 
 * ``GET  /api/analytics/status``          creator  – feature on/off, data freshness, suggested questions
 * ``POST /api/analytics/ask``             creator  – natural-language question → SQL, rows, answer, chart hint

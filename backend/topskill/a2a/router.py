@@ -210,7 +210,7 @@ async def a2a_rpc(slug: str, request: Request) -> Response:
     if not isinstance(message.get("parts"), list) or not message["parts"]:
         return rpc_error(rpc_id, -32602, 400, Codes.VALIDATION_ERROR, "Invalid params: message.parts.")
     _force_blocking(method, params)
-    # P2 guard (SPEC §18 "Guard"): screen every part of the caller's message during the preflight (redacted
+    # P2 guard (SPEC §18.2): screen every part of the caller's message during the preflight (redacted
     # in place); never raises. A part that cannot be screened fails closed before anything is reserved. A
     # blocked message is still reserved and then settled as failed, so the call shows up (not charged).
     prompt_check = asyncio.ensure_future(

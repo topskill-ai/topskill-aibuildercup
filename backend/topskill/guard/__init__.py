@@ -1,4 +1,4 @@
-"""Model Armor protection for public agents (P2, SPEC §18 "Guard").
+"""Model Armor protection for public agents (P2, SPEC §18.2).
 
 ``sanitize_prompt(text, ctx)`` / ``sanitize_response(text, ctx)`` return a :class:`GuardVerdict`
 (``allow`` / ``redact`` / ``block`` with the matched categories) and never raise (fail-open). Callers pass

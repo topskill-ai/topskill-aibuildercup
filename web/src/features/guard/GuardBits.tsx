@@ -1,5 +1,5 @@
 /**
- * P2 guard (SPEC §18 "Guard"): "Protected by Model Armor" badge and the per-message screening note.
+ * P2 guard (SPEC §18.2): "Protected by Model Armor" badge and the per-message screening note.
  */
 import { ShieldAlert, ShieldCheck } from "lucide-react";
 import type { GuardData } from "@/api/types";

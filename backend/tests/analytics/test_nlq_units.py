@@ -1,4 +1,4 @@
-"""Question flow with a fake warehouse and a scripted planner; transforms and MERGE SQL (SPEC §18 analytics)."""
+"""Question flow with a fake warehouse and a scripted planner; transforms and MERGE SQL (SPEC §18.4)."""
 
 from __future__ import annotations
 

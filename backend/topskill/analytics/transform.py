@@ -1,4 +1,4 @@
-"""Firestore document → warehouse row (pure functions, SPEC §18 analytics).
+"""Firestore document → warehouse row (pure functions, SPEC §18.4).
 
 Rows are JSON-ready dicts whose keys are exactly the table's column names (see :mod:`.tables`): timestamps
 become ISO-8601 UTC strings, unknown or malformed values become ``None``. ``owner_uid`` is required: a doc

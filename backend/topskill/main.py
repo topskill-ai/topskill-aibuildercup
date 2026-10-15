@@ -17,7 +17,7 @@ from topskill.a2a.mandate_router import router as mandate_router
 from topskill.a2a.router import router as a2a_router
 from topskill.agents.public_router import router as agents_public_router
 from topskill.agents.router import router as agents_router
-from topskill.analytics.router import router as analytics_router  # P2 (SPEC §18 analytics)
+from topskill.analytics.router import router as analytics_router  # P2 (SPEC §18.4)
 from topskill.auth import init_firebase
 from topskill.billing.router import public_router as billing_public_router
 from topskill.billing.router import router as billing_router
@@ -80,7 +80,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     init_firebase()
     tasks.spawn(_warm_import_adk(), name="warm-import:google.adk")
     tasks.spawn(sweep_stale_all(), name="knowledge:startup-sweep")  # never raises (SPEC §10.1)
-    tasks.spawn(guard_warm_up(), name="guard:warm-up")  # P2 guard (SPEC §18 "Guard"); never raises
+    tasks.spawn(guard_warm_up(), name="guard:warm-up")  # P2 guard (SPEC §18.2); never raises
     log.info("startup env=%s version=%s routers=%s", settings.env, settings.app_version, mounted_routers(app))
     try:
         yield

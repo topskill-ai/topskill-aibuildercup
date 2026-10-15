@@ -1,4 +1,4 @@
-"""Run the Firestore → BigQuery analytics sync once from a laptop (SPEC §18 analytics).
+"""Run the Firestore → BigQuery analytics sync once from a laptop (SPEC §18.4).
 
 Usage (from backend/, settings from the environment / backend/.env):
     uv run python -m scripts.analytics_sync [--full] [--dataset topskill_analytics_dev] [--memory-state]

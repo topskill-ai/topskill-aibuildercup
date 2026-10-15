@@ -1,4 +1,4 @@
-"""Wiring of the analytics feature: settings → warehouse, sync state, planner (SPEC §18 analytics).
+"""Wiring of the analytics feature: settings → warehouse, sync state, planner (SPEC §18.4).
 
 :func:`get_analytics` is the FastAPI dependency; tests override it with a fake warehouse/planner.
 """

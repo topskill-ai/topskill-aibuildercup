@@ -147,7 +147,7 @@ class Settings(BaseSettings):
     voice_connect_timeout_s: float = Field(12.0, gt=0)  # per Live plan: WS handshake + setupComplete
     voice_max_tool_calls_per_round: int = Field(8, ge=1)
 
-    # ---- guard: Model Armor screening of public agents (P2, SPEC §18 "Guard"); fail-open on errors
+    # ---- guard: Model Armor screening of public agents (P2, SPEC §18.2); fail-open on errors
     guard_backend: Literal["model_armor", "off"] = "model_armor"
     guard_project: str = "top-skill"
     guard_location: str = "asia-southeast1"

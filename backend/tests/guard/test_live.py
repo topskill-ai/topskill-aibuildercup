@@ -1,4 +1,4 @@
-"""Live checks against the real Model Armor template (SPEC §18 "Guard"). Run with ``-m live``; needs ADC with
+"""Live checks against the real Model Armor template (SPEC §18.2). Run with ``-m live``; needs ADC with
 ``modelarmor.templates.useToSanitize`` on the template (``roles/modelarmor.user``)."""
 
 from __future__ import annotations

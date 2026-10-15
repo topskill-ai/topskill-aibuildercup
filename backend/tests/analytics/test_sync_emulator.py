@@ -1,4 +1,4 @@
-"""Incremental Firestore → warehouse sync on the emulator with a fake BigQuery (SPEC §18 analytics)."""
+"""Incremental Firestore → warehouse sync on the emulator with a fake BigQuery (SPEC §18.4)."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Screening of every A2A message part, batched counters and the health tracker (SPEC §18 "Guard")."""
+"""Screening of every A2A message part, batched counters and the health tracker (SPEC §18.2)."""
 
 from __future__ import annotations
 

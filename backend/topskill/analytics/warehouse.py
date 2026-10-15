@@ -1,4 +1,4 @@
-"""BigQuery access for creator analytics (SPEC §18 analytics).
+"""BigQuery access for creator analytics (SPEC §18.4).
 
 :class:`Warehouse` is the small interface the sync job and the question answering use; tests pass a fake.
 :class:`BigQueryWarehouse` implements it with ``google-cloud-bigquery`` (a blocking client, so every call

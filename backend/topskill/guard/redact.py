@@ -1,4 +1,4 @@
-"""Span redaction for SDP findings (SPEC §18 "Guard")."""
+"""Span redaction for SDP findings (SPEC §18.2)."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Guard policy, parsing, redaction and fail-open behaviour without Firestore (SPEC §18 "Guard")."""
+"""Guard policy, parsing, redaction and fail-open behaviour without Firestore (SPEC §18.2)."""
 
 from __future__ import annotations
 

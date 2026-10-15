@@ -153,7 +153,7 @@ if confirm "Grant deploy roles to ${BUILD_SA}?"; then
     --member="serviceAccount:${BUILD_SA}" --role=roles/iam.serviceAccountUser --format=none
 fi
 
-# ---- P2 guard: Model Armor (SPEC §18 "Guard")
+# ---- P2 guard: Model Armor (SPEC §18.2)
 GUARD_LOCATION="${GUARD_LOCATION:-asia-southeast1}"
 GUARD_TEMPLATE="${GUARD_TEMPLATE:-topskill-public}"
 log "Model Armor template ${GUARD_TEMPLATE} (${GUARD_LOCATION})"
@@ -172,7 +172,7 @@ else
     --basic-config-filter-enforcement=enabled --labels=app=topskill
 fi
 unset CLOUDSDK_API_ENDPOINT_OVERRIDES_MODELARMOR
-# Apply this grant BEFORE deploying an image with GUARD_BACKEND=model_armor (SPEC §18 "Guard", ship order).
+# Apply this grant BEFORE deploying an image with GUARD_BACKEND=model_armor (SPEC §18.2, ship order).
 if confirm "Grant roles/modelarmor.user to ${RUNTIME_SA}?"; then
   bind_project "serviceAccount:${RUNTIME_SA}" roles/modelarmor.user
 fi
@@ -185,7 +185,7 @@ if confirm "Grant roles/telemetry.tracesWriter to ${RUNTIME_SA}?"; then
   bind_project "serviceAccount:${RUNTIME_SA}" roles/telemetry.tracesWriter
 fi
 
-# ---- P2: Ask your data (SPEC 18 analytics) -------------------------------------------------------------
+# ---- P2: Ask your data (SPEC §18.4) -------------------------------------------------------------
 ANALYTICS_DATASET="${ANALYTICS_DATASET:-topskill_analytics}"
 SCHEDULER_SA_NAME="${SCHEDULER_SA_NAME:-topskill-scheduler}"
 SCHEDULER_SA="${SCHEDULER_SA_NAME}@${PROJECT}.iam.gserviceaccount.com"

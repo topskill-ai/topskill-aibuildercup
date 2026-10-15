@@ -1,4 +1,4 @@
-"""Value types of the guard package (SPEC §18 "Guard")."""
+"""Value types of the guard package (SPEC §18.2)."""
 
 from __future__ import annotations
 
