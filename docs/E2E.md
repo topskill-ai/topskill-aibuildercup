@@ -45,19 +45,19 @@ Viewports: **1440 × 900** and **375 × 812** for every screenshot marked 📷. 
 
 | # | Step | Expected | 📷 |
 |---|---|---|---|
-| 1 | Creator signs in (local: Developer login `creator-e2e` / role creator; prod: email + password) | Studio dashboard, balance 100.00 | `studio-empty` |
-| 2 | `/studio/new`: drop `backend/scripts/demo_data/visa-advisor/` + `visa_guide.pdf` | Draft fields fill in (≈ 9 s), timer running | `wizard-draft` |
-| 3 | Generate avatar | Avatar appears (≈ 8 s) | `wizard-avatar` |
-| 4 | Pricing step | "Visitors pay 1.00 per round, first 2 rounds free; you receive 0.80" | `wizard-pricing` |
-| 5 | Publish | Redirect to agent Overview, "Published in N s" toast | `agent-overview` |
+| 1 | Creator signs in (local: Developer login `creator-e2e` / role creator; prod: email + password). Seed the demo agents with this account as owner (`seed_demo.py --owner-uid`), so step 14 shows the income of steps 8–13; the visitor (step 7) and the assistant user (step 12) are other accounts | Studio dashboard, balance 100.00 | `studio-empty` |
+| 2 | `/studio/new`: drop `backend/scripts/demo_data/visa-advisor/` + `visa_guide.pdf` | Draft fields fill in (≈ 15–20 s), timer running | `wizard-draft` |
+| 3 | Generate avatar | Avatar appears (≈ 10–15 s) | `wizard-avatar` |
+| 4 | Pricing step: set 1.00 per round if the draft suggested another price; turn **"Callable by AI agents (A2A)" off** | "Visitors pay 1.00 per round, first 2 rounds free; you receive 0.80" | `wizard-pricing` |
+| 5 | Go live: **"List in the marketplace" off**, then Publish (a listed, A2A-enabled copy of the visa skill competes with the seeded `visa-advisor` in step 13) | Redirect to agent Overview, "Published in N s" toast | `agent-overview` |
 | 6 | Wait for knowledge | Overview badge "Knowledge: ready" | `knowledge-ready` |
 | 7 | Visitor signs in (other account), opens `/a/<slug>` | Greeting, 3 starter questions, billing hint "2 free rounds left" | `agent-page` |
 | 8 | Round 1 (starter question) | Streamed answer with `[1]` markers, Sources: `visa_guide.pdf · p. N`, web chips + search entry point, "Free round 1 of 2" | `chat-citations` |
-| 9 | Round 2: state nationality / budget | Tool line "Saved N fields", "Free round 2 of 2" | `chat-record` |
+| 9 | Round 2: state nationality / budget | Tool line "Saved notes" (expanded: "N fields"), "Free round 2 of 2" | `chat-record` |
 | 10 | Round 3 | "Charged 1.00 · round 3", balance 99.00 | `chat-charged` |
 | 11 | Creator → Records tab | New row with saved fields; Export CSV downloads (BOM, columns) | `records`, CSV |
 | 12 | `/assistant`: authorise budget 20.00 / max 5.00 / 30 min | Mandate card | `assistant-mandate` |
-| 13 | Ask the Brazil new-hire question | Discover card (3 agents) → `visa-advisor` charged 2.00 → `resume-reviewer` charged 2.00 → `contract-reviewer` **rejected · mandate_exceeds_max · Not charged** → final answer; budget bar 4.00 / 20.00 | `assistant-timeline` |
+| 13 | Ask the Brazil new-hire question (with the resume/offer facts from DEMO.md) | Discover cards with the seeded agents (no other visa agent: see DEMO.md warm-up 4) → `visa-advisor` charged 2.00 → `resume-reviewer` charged 2.00 → `contract-reviewer` **rejected · mandate_exceeds_max · Not charged** → final answer; budget bar 4.00 / 20.00 | `assistant-timeline` |
 | 14 | Creator `/studio` | Earned today includes visitor + A2A income (separate categories), recent income rows | `dashboard-income` |
 | 15 | `/wallet` (visitor and assistant user) | Ledger rows with categories, counterparty, memo | `wallet-ledger` |
 
@@ -65,6 +65,7 @@ Error paths to spot-check once: visitor with 0.40 credits → Paywall dialog (`v
 
 ## 4. Prod checks after every deploy
 
+0. Deploy from a dedicated clean worktree (`git worktree add --detach ../topskill.worktrees/deploy-prod main`, then `git -C ../topskill.worktrees/deploy-prod checkout --detach <sha>`): the script refuses a tree with untracked files (they would enter the Cloud Build context), and other work in the main checkout writes screenshots and drafts. Deploy Firestore indexes **before** the backend; the script waits until every index is READY (`INDEX_WAIT_S`, default 900 s), because a new revision's startup knowledge sweep needs the `knowledge.status` collection-group index. If an index was added after a backend deploy, redeploy (or restart the revision) once it is READY so the sweep runs.
 1. `deploy/scripts/deploy_backend.sh` checks that the Ready revision serves `api:<sha>` with 100% traffic, that `/health` reports the sha (when the alias is present; `/healthz` is reserved by Cloud Run's front end and only reachable by the startup probe) and that `/api/public/meta` is 200.
 2. Smoke test — every list endpoint × every filter combination of SPEC §5.3 once, fails on any 5xx (missing index) or non-2xx on a MUST endpoint:
    ```bash
