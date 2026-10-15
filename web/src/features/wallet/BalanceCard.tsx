@@ -23,7 +23,7 @@ export function BalanceCard() {
   return (
     <section
       aria-label="Balance"
-      className="relative overflow-hidden rounded-card bg-gradient-to-br from-indigo-600 via-indigo-600 to-violet-600 p-6 text-white sm:p-7"
+      className="relative overflow-clip rounded-card bg-gradient-to-br from-indigo-600 via-indigo-600 to-violet-600 p-6 text-white sm:p-7"
     >
       <div aria-hidden className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-white/10 blur-2xl" />
       <div aria-hidden className="pointer-events-none absolute -bottom-24 left-1/3 h-56 w-56 rounded-full bg-violet-400/20 blur-2xl" />
@@ -56,8 +56,10 @@ export function BalanceCard() {
             onClick={onTopup}
             loading={topup.isPending}
             disabled={topupCents === undefined}
+            variant="secondary"
+            size="lg"
             icon={<Plus aria-hidden className="h-4 w-4" />}
-            className="bg-white text-indigo-700 hover:bg-indigo-50"
+            data-testid="demo-topup"
           >
             {topupCents === undefined ? "Add demo credits" : `Add ${formatCredits(topupCents)} demo credits`}
           </Button>

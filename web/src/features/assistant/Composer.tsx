@@ -48,8 +48,8 @@ export function Composer({ value, onChange, onSubmit, onStop, streaming, hint }:
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="Describe a task, e.g. our new hire needs a work visa plan and a resume review…"
-          className="border-0 bg-transparent shadow-none hover:border-0 focus:ring-0"
+          placeholder="Describe a task for your assistant…"
+          className="border-0 bg-transparent shadow-none hover:border-0 focus:ring-0 focus-visible:outline-none"
         />
         {streaming ? (
           <Button type="button" variant="outline" size="icon" aria-label="Stop" onClick={onStop}>

@@ -112,7 +112,7 @@ function BudgetDialogForm({
           {(c) => (
             <Textarea
               {...c}
-              rows={2}
+              rows={3}
               maxLength={INTENT_MAX}
               value={form.intent}
               invalid={c.invalid}

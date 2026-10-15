@@ -1,4 +1,4 @@
-import { Bot, Lock, Network, RotateCcw, Search, ShieldCheck, Sparkles } from "lucide-react";
+import { Bot, RotateCcw, ShieldCheck, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useMeta } from "@/api/meta";
 import type { Mandate } from "@/api/types";
@@ -21,14 +21,14 @@ const EXAMPLES = [
 ];
 
 const STEPS = [
-  { icon: Lock, title: "You authorise a budget", text: "A signed mandate: total budget, per-call limit, expiry." },
-  { icon: Search, title: "It discovers specialists", text: "Ranks TopSkill agents and reads their A2A Agent Cards." },
-  { icon: Network, title: "It pays per call over A2A", text: "Each call carries the mandate. Rejected calls cost nothing." },
+  { title: "You authorise a budget", text: "A signed mandate: total budget, per-call limit, expiry." },
+  { title: "It discovers specialists", text: "Ranks TopSkill agents and reads their A2A Agent Cards." },
+  { title: "It pays per call over A2A", text: "Each call carries the mandate. Rejected calls cost nothing." },
 ];
 
 function EmptyIntro({ onPick }: { onPick: (text: string) => void }) {
   return (
-    <div className="relative overflow-hidden rounded-card border border-border bg-surface p-6 sm:p-8">
+    <div className="relative overflow-clip rounded-card border border-border bg-surface p-6 sm:p-8">
       <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-indigo-100 blur-3xl" />
       <div aria-hidden className="pointer-events-none absolute -bottom-28 -left-16 h-64 w-64 rounded-full bg-violet-100 blur-3xl" />
       <div className="relative">
@@ -43,10 +43,9 @@ function EmptyIntro({ onPick }: { onPick: (text: string) => void }) {
         <ol className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
           {STEPS.map((s, i) => (
             <li key={s.title} className="min-w-0 rounded-control border border-border bg-surface/80 p-3">
-              <div className="flex items-center gap-2 text-sm font-semibold">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-soft text-xs text-primary">{i + 1}</span>
-                <s.icon aria-hidden className="h-4 w-4 text-primary" />
-                <span className="truncate">{s.title}</span>
+              <div className="flex items-start gap-2 text-sm leading-5 font-semibold">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary-soft text-xs text-primary">{i + 1}</span>
+                <span className="min-w-0">{s.title}</span>
               </div>
               <p className="mt-1 text-[13px] text-muted">{s.text}</p>
             </li>
@@ -91,12 +90,37 @@ export default function AssistantPage() {
   const endRef = useRef<HTMLDivElement | null>(null);
   const live = a.active ? liveMandate(a.active.mandate, a.counters) : null;
 
-  // Follow the timeline while it grows, unless the user scrolled up to read.
-  const lastTurn = a.turns[a.turns.length - 1];
+  // Follow the timeline while it grows, until the user scrolls up to read; scrolling back to the
+  // bottom (or starting a new turn) resumes following.
+  const follow = useRef(true);
   useEffect(() => {
-    if (!lastTurn) return;
-    const nearBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 320;
-    if (nearBottom) endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+    const nearBottom = () => window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 160;
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) follow.current = false;
+    };
+    const onScroll = () => {
+      if (nearBottom()) follow.current = true;
+    };
+    const onTouch = () => {
+      follow.current = nearBottom();
+    };
+    window.addEventListener("wheel", onWheel, { passive: true });
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("touchmove", onTouch, { passive: true });
+    return () => {
+      window.removeEventListener("wheel", onWheel);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("touchmove", onTouch);
+    };
+  }, []);
+  const lastTurn = a.turns[a.turns.length - 1];
+  const turnCount = a.turns.length;
+  useEffect(() => {
+    if (turnCount > 0) follow.current = true;
+  }, [turnCount]);
+  useEffect(() => {
+    if (!lastTurn || !follow.current) return;
+    endRef.current?.scrollIntoView({ block: "end", behavior: lastTurn.status === "streaming" ? "smooth" : "auto" });
   }, [lastTurn]);
 
   const submit = (text: string) => {
@@ -140,10 +164,14 @@ export default function AssistantPage() {
           <div className="flex-1 space-y-8" aria-live="polite">
             {a.turns.length === 0 ? <EmptyIntro onPick={submit} /> : null}
             {a.turns.map((t) => (
-              <TurnView key={t.id} turn={t} onReauthorise={openAuthorise} />
+              <TurnView
+                key={t.id}
+                turn={t}
+                onReauthorise={(task) => !a.streaming && setDialog({ open: true, task, sendAfter: true })}
+              />
             ))}
           </div>
-          <div ref={endRef} />
+          <div ref={endRef} aria-hidden className="scroll-mb-36" />
           <div className="sticky bottom-0 z-10 -mx-1 mt-6 bg-gradient-to-t from-bg via-bg to-transparent px-1 pt-4 pb-4">
             <Composer
               value={draft}

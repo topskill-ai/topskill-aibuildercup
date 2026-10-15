@@ -295,7 +295,11 @@ function CallNode({ item }: { item: CallItem }) {
             </div>
           ) : null}
         </div>
-        {item.endpoint ? (
+        {item.callId === null && (item.status === "rejected" || !item.sent) ? (
+          <div className="border-t border-border/70 bg-slate-50/70 px-4 py-1.5 text-2xs text-subtle">
+            Stopped by the pre-flight check — no request was sent to the agent.
+          </div>
+        ) : item.endpoint ? (
           <div className="truncate border-t border-border/70 bg-slate-50/70 px-4 py-1.5 font-mono text-2xs text-subtle" title={item.endpoint}>
             JSON-RPC SendMessage → {item.endpoint}
           </div>
@@ -351,13 +355,16 @@ function TurnSummaryBar({ turn }: { turn: Turn }) {
 
 export interface TurnViewProps {
   turn: Turn;
-  /** Shown when a pre-stream mandate error asks for a new budget. */
-  onReauthorise?: () => void;
+  /** Shown when a pre-stream mandate error asks for a new budget; receives the task to retry. */
+  onReauthorise?: (task: string) => void;
 }
 
 export function TurnView({ turn, onReauthorise }: TurnViewProps) {
   const streaming = turn.status === "streaming";
-  const thinking = streaming && !turn.answer;
+  const busyItem = turn.items.some(
+    (i) => (i.kind === "discover" && i.status === "running") || (i.kind === "call" && (i.status === "pending" || i.status === "running")),
+  );
+  const thinking = streaming && !turn.answer && !busyItem;
   const mandateError = turn.error && (MANDATE_ERROR_CODES.includes(turn.error.code) || turn.error.code === "forbidden");
   return (
     <section aria-label="Assistant turn" className="space-y-4">
@@ -377,7 +384,7 @@ export function TurnView({ turn, onReauthorise }: TurnViewProps) {
             {thinking ? (
               <Node icon={<Sparkles />} tone="primary" pulse>
                 <div className="pt-1 text-sm text-muted">
-                  {turn.items.length === 0 ? "Planning which specialists to hire…" : "Working…"}
+                  {turn.items.length === 0 ? "Planning which specialists to hire…" : "Deciding the next step…"}
                 </div>
               </Node>
             ) : null}
@@ -406,8 +413,8 @@ export function TurnView({ turn, onReauthorise }: TurnViewProps) {
         <div className="rounded-card border border-danger/30 bg-danger-soft/50 p-3">
           <ErrorLine message={turn.error.message || "Something went wrong."} traceId={turn.error.traceId} />
           {mandateError && turn.rejectedBeforeStream && onReauthorise ? (
-            <Button size="sm" variant="outline" className="mt-2" icon={<Lock aria-hidden className="h-4 w-4" />} onClick={onReauthorise}>
-              Authorise a new budget
+            <Button size="sm" variant="outline" className="mt-2" icon={<Lock aria-hidden className="h-4 w-4" />} onClick={() => onReauthorise(turn.userText)}>
+              Authorise a new budget and retry
             </Button>
           ) : null}
         </div>
