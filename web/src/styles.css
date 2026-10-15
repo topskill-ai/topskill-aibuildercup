@@ -264,6 +264,9 @@
     padding: 6px 10px;
     text-align: left;
     vertical-align: top;
+    /* Never split words inside cells; a table too wide for the column scrolls instead. */
+    overflow-wrap: normal;
+    word-break: normal;
   }
   .prose-answer th {
     background: #f8fafc;
