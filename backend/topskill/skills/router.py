@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from pathlib import PurePosixPath
 
-from fastapi import APIRouter, Depends, Request, UploadFile
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
+from starlette.datastructures import UploadFile
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from topskill.auth import CurrentUser, require_creator
