@@ -190,6 +190,24 @@ async def settle_a2a_call(
     db = get_db()
     call_ref = _call_ref(call_id)
 
+    # Fast path without locks: the failure paths call this unconditionally after a normal settlement.
+    pre = await call_ref.get()
+    if pre.exists and (pre.to_dict() or {}).get("status") != "running":
+        call = pre.to_dict() or {}
+        snaps = await get_many(
+            None, [_mandate_ref(str(call["mandate_id"])), wallet_ref(str(call["payer_uid"]))]
+        )
+        mandate_snap = snaps.get(_mandate_ref(str(call["mandate_id"])).path)
+        _, spent, _ = _mandate_counters(mandate_snap.to_dict() or {} if mandate_snap else {})
+        return A2ACharge(
+            call_id=call_id,
+            status="duplicate",
+            charged_cents=int(call.get("charged_cents") or 0),
+            creator_share_cents=int(call.get("creator_share_cents") or 0),
+            payer_balance_cents=balance_of(snaps.get(wallet_ref(str(call["payer_uid"])).path)) or 0,
+            mandate_spent_cents=spent,
+        )
+
     @firestore.async_transactional
     async def _settle(tx: AsyncTransaction) -> A2ACharge:
         call_snap = await call_ref.get(transaction=tx)
@@ -338,4 +356,13 @@ async def settle_a2a_call(
             mandate_spent_cents=new_spent,
         )
 
-    return await _settle(db.transaction(max_attempts=TX_MAX_ATTEMPTS))
+    charge = await _settle(db.transaction(max_attempts=TX_MAX_ATTEMPTS))
+    log.info(
+        "a2a_call_settled call_id=%s status=%s charged_cents=%d share_cents=%d error_code=%s",
+        call_id,
+        charge.status,
+        charge.charged_cents,
+        charge.creator_share_cents,
+        error_code if not succeeded else None,
+    )
+    return charge

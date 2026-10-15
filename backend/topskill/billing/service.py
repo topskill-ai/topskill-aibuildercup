@@ -405,7 +405,17 @@ async def settle_round(
         tx.set(stats_ref(agent.id), stats, merge=True)
         return charge
 
-    return await _settle(db.transaction(max_attempts=TX_MAX_ATTEMPTS))
+    charge = await _settle(db.transaction(max_attempts=TX_MAX_ATTEMPTS))
+    log.info(
+        "round_settled agent_id=%s request_id=%s outcome=%s charged_cents=%d share_cents=%d round_index=%s",
+        agent.id,
+        request_id,
+        charge.outcome,
+        charge.charged_cents,
+        charge.creator_share_cents,
+        charge.round_index,
+    )
+    return charge
 
 
 # --------------------------------------------------------------------------- T4 demo top-up
