@@ -43,6 +43,21 @@ async def test_protocol_errors(client, a2a_env: A2AEnv) -> None:
     resp = await client.post(url, json={"jsonrpc": "2.0", "id": 3, "method": "SendMessage"})
     assert resp.status_code == 400 and resp.json()["error"]["code"] == -32602 and resp.json()["id"] == 3
 
+    for method in (["x"], {"a": 1}, 5, "", None):
+        resp = await client.post(url, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": {}})
+        assert resp.status_code == 400, (method, resp.text)
+        assert resp.json()["error"]["code"] == -32600 and resp.json()["id"] == 1
+
+    payer = unique("u_")
+    await make_user("visitor", uid=payer)
+    _, token = await issue_mandate(client, payer)
+    for parts in (5, "hi", {"text": "hi"}, []):
+        body = _send()
+        body["params"]["message"]["parts"] = parts
+        resp = await client.post(url, json=body, headers={"X-AP2-Mandate": token})
+        assert resp.status_code == 400, (parts, resp.text)
+        assert resp.json()["error"]["code"] == -32602 and resp.json()["id"] == 7
+
     resp = await client.post(
         url, json={"jsonrpc": "2.0", "id": "x", "method": "GetExtendedAgentCard", "params": {}}
     )

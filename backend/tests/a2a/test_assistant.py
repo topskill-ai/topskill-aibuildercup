@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 import pytest
 from google.cloud.firestore import FieldFilter
@@ -9,7 +11,8 @@ from google.cloud.firestore import FieldFilter
 from tests.a2a.conftest import A2AEnv, issue_mandate, parse_sse
 from tests.a2a.fakes import ScriptedLlm, call_response, function_responses, text_response
 from tests.conftest import dev_headers
-from topskill.a2a import assistant
+from tests.core.helpers import settings_env
+from topskill.a2a import assistant, directory
 from topskill.db import Col, get_db
 from topskill.testing.factories import make_agent, make_user, open_wallet, unique
 
@@ -221,3 +224,141 @@ async def test_assistant_rejects_before_streaming(client, a2a_env: A2AEnv) -> No
     too_many = {"messages": [{"role": "user", "text": "x"}] * 13, "mandate_token": token}
     resp = await client.post(url, json=too_many, headers=dev_headers(payer))
     assert resp.status_code == 400
+
+
+def _assert_frames_closed(events: list[tuple[str, dict]]) -> None:
+    """SPEC §7.4 rule 2: every tool_start has a tool_end and every a2a_call an a2a_result, all before
+    error/done; exactly one done, last."""
+    names = [n for n, _ in events]
+    assert names[-1] == "done" and names.count("done") == 1
+    starts = [d["id"] for n, d in events if n == "tool_start"]
+    ends = [d["id"] for n, d in events if n == "tool_end"]
+    assert sorted(starts) == sorted(ends), (starts, ends)
+    calls = [n for n in names if n == "a2a_call"]
+    results = [n for n in names if n == "a2a_result"]
+    assert len(calls) <= len(results)
+    tail = names.index("error") if "error" in names else len(names) - 1
+    assert all(n not in ("tool_end", "a2a_result") for n in names[tail:]), names
+
+
+async def test_slow_agent_fails_free_and_is_never_charged_later(
+    client, a2a_env: A2AEnv, assistant_llm, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The scripted agent outlives A2A_CALL_TIMEOUT_S: the server gives up first and settles the call as
+    failed, so the stream's "not charged" stays true after the slow run would have finished."""
+    tag = unique("q")
+    _, visa, _, _ = await _agents(tag)
+
+    async def slow(_request):
+        await asyncio.sleep(5)
+        return text_response("too late")
+
+    a2a_env.runtime.scripts[visa.slug] = [slow]
+    payer, mandate, token = await _payer(client)
+    assistant_llm(
+        [
+            call_response("call_agent", {"slug": visa.slug, "request": "Plan a visa."}),
+            text_response("The visa advisor timed out; nothing was charged."),
+        ]
+    )
+    with settings_env(monkeypatch, a2a_call_timeout_s="3"):
+        events = await _chat(client, payer, token)
+    _assert_frames_closed(events)
+    [call] = [d for n, d in events if n == "a2a_call"]
+    [result] = [d for n, d in events if n == "a2a_result"]
+    assert call["call_id"] and result["call_id"] == call["call_id"]
+    assert (result["status"], result["error_code"], result["charged_cents"]) == (
+        "failed",
+        "agent_run_failed",
+        0,
+    )
+    assert events[-1][1]["mandate"]["spent_cents"] == 0
+
+    await asyncio.sleep(3)  # past the moment the slow run would have answered
+    doc = (await get_db().collection(Col.A2A_CALLS).document(call["call_id"]).get()).to_dict()
+    assert doc["status"] == "failed" and doc["charged_cents"] == 0
+    m = (await get_db().collection(Col.MANDATES).document(mandate["id"]).get()).to_dict()
+    assert (m["spent_cents"], m["reserved_cents"], m["calls"]) == (0, 0, 0)
+
+
+@pytest.mark.parametrize("slow", ["find", "send"])
+async def test_turn_timeout_closes_open_frames(
+    client, a2a_env: A2AEnv, assistant_llm, monkeypatch: pytest.MonkeyPatch, slow: str
+) -> None:
+    tag = unique("q")
+    _, visa, _, _ = await _agents(tag)
+    payer, _mandate, token = await _payer(client)
+
+    async def hang(*_args, **_kwargs):
+        await asyncio.sleep(30)
+        raise AssertionError("not cancelled")
+
+    if slow == "find":
+        monkeypatch.setattr(directory, "search", hang)
+        first = call_response("find_agents", {"need": "visa help"})
+    else:
+        monkeypatch.setattr(assistant.AssistantRun, "_send", hang)
+        first = call_response("call_agent", {"slug": visa.slug, "request": "Plan a visa."})
+    assistant_llm([first, text_response("unreachable")])
+    with settings_env(monkeypatch, turn_total_timeout_s="2", a2a_call_timeout_s="1"):
+        events = await _chat(client, payer, token)
+    _assert_frames_closed(events)
+    names = [n for n, _ in events]
+    assert names[-2:] == ["error", "done"] and events[-2][1]["code"] == "turn_timeout"
+    [end] = [d for n, d in events if n == "tool_end"]
+    assert end["status"] == "error"
+    if slow == "send":
+        [call] = [d for n, d in events if n == "a2a_call"]
+        [result] = [d for n, d in events if n == "a2a_result"]
+        assert result["call_id"] == call["call_id"] and call["call_id"]
+        assert (result["status"], result["error_code"], result["charged_cents"]) == (
+            "failed",
+            "turn_timeout",
+            0,
+        )
+
+
+async def test_call_is_not_started_without_time_for_it(
+    client, a2a_env: A2AEnv, assistant_llm, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tag = unique("q")
+    _, visa, _, _ = await _agents(tag)
+    payer, mandate, token = await _payer(client)
+    assistant_llm(
+        [
+            call_response("call_agent", {"slug": visa.slug, "request": "Plan a visa."}),
+            text_response("There was no time left to ask the visa advisor."),
+        ]
+    )
+    with settings_env(monkeypatch, turn_total_timeout_s="5", a2a_call_timeout_s="10"):
+        events = await _chat(client, payer, token)
+    _assert_frames_closed(events)
+    assert not [n for n, _ in events if n == "a2a_call"]
+    [result] = [d for n, d in events if n == "a2a_result"]
+    assert (result["status"], result["error_code"], result["call_id"]) == ("rejected", "turn_timeout", None)
+    assert events[-1][1]["outcome"] == "ok" and events[-1][1]["mandate"]["calls"] == 0
+    assert mandate["id"] == events[-1][1]["mandate"]["id"]
+
+
+async def test_precheck_infrastructure_failure_is_rejected(
+    client, a2a_env: A2AEnv, assistant_llm, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tag = unique("q")
+    _, visa, _, _ = await _agents(tag)
+    payer, _mandate, token = await _payer(client)
+
+    async def down(*_args, **_kwargs):
+        raise RuntimeError("firestore unavailable")
+
+    monkeypatch.setattr(assistant, "load_a2a_agent", down)
+    assistant_llm(
+        [
+            call_response("call_agent", {"slug": visa.slug, "request": "Plan a visa."}),
+            text_response("The marketplace is unavailable right now."),
+        ]
+    )
+    events = await _chat(client, payer, token)
+    _assert_frames_closed(events)
+    [result] = [d for n, d in events if n == "a2a_result"]
+    assert (result["status"], result["error_code"]) == ("rejected", "service_unavailable")
+    assert events[-1][1]["outcome"] == "ok"

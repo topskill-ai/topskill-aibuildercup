@@ -71,6 +71,8 @@ ANSWER_TO_MODEL_CHARS = 6000
 ANSWER_PREVIEW_CHARS = 300
 REQUEST_PREVIEW_CHARS = 120
 RATE_LIMIT_PER_HOUR = 60
+CALL_SETTLE_WAIT_S = 10.0
+CALL_SETTLE_POLL_S = 0.5
 
 ASSISTANT_PROMPT = """You are the Enterprise Assistant for Acme Corp employees. You can hire specialist \
 agents from the TopSkill marketplace over A2A.
@@ -81,8 +83,9 @@ How to work:
 call_agent: include every fact the specialist needs, because it cannot ask follow-up questions.
 - Then write a concise final answer that attributes points to the agent that provided them \
 (for example "Per Visa Advisor: ...") and states the total credits spent (100 cents = 1.00 credit).
-- Never invent agent answers. If a call fails or is rejected, say so briefly (it was not charged) and \
-continue without it.
+- Never invent agent answers. If a call fails or is rejected, say so briefly and continue without it. \
+Such calls are not charged unless the tool result reports charged_cents above zero or a pending charge \
+in its note.
 - Reply in the employee's language. Use short Markdown sections or lists when helpful."""
 
 
@@ -218,12 +221,52 @@ class AssistantRun:
         self.tool_seq = 0
         self.discovered: dict[str, DiscoveredAgent] = {}
         self.settings = get_settings()
+        self.deadline: float | None = None  # loop time at which the turn times out
+        # Frames opened but not closed yet (SPEC §7.4 rule 2): tool id → tool name, and tool id →
+        # (call_id, slug) of an announced ``a2a_call`` without its ``a2a_result``.
+        self.open_tools: dict[str, str] = {}
+        self.pending_calls: dict[str, tuple[str | None, str]] = {}
 
     # ---- frames
 
     def _tool_id(self, prefix: str) -> str:
         self.tool_seq += 1
         return f"{prefix}-{self.tool_seq}"
+
+    def _start_tool(self, data: ToolStartData) -> None:
+        self.open_tools[data.id] = data.tool
+        self.out.emit(EventName.TOOL_START, data)
+
+    def _end_tool(self, tool_id: str, status: Literal["completed", "error"]) -> None:
+        tool = self.open_tools.pop(tool_id, None)
+        if tool is not None:
+            self.out.emit(EventName.TOOL_END, ToolEndData(id=tool_id, tool=tool, status=status))
+
+    def _announce_call(self, tool_id: str, data: A2ACallData) -> None:
+        self.pending_calls[tool_id] = (data.call_id, data.slug)
+        self.out.emit(EventName.A2A_CALL, data)
+
+    def _remaining_s(self) -> float:
+        if self.deadline is None:
+            return float("inf")
+        return self.deadline - asyncio.get_running_loop().time()
+
+    async def close_open_frames(self, error_code: str) -> None:
+        """Close every frame a cut-short turn left open: each announced call gets a failed
+        ``a2a_result`` (with whatever its call doc says was charged), each open tool a ``tool_end`` error."""
+        for tool_id, (call_id, slug) in list(self.pending_calls.items()):
+            call = await self._read_call(call_id) if call_id else None
+            await self._emit_result(
+                tool_id,
+                call_id=call_id,
+                slug=slug,
+                status="failed",
+                charged_cents=int(call.get("charged_cents", 0)) if call else 0,
+                creator_share_cents=int(call.get("creator_share_cents", 0)) if call else 0,
+                error_code=error_code,
+            )
+        for tool_id in list(self.open_tools):
+            self._end_tool(tool_id, "error")
 
     async def _counters(self) -> tuple[int, int, int]:
         """``(spent_cents, budget_cents, calls)`` of the mandate (fresh read)."""
@@ -248,6 +291,7 @@ class AssistantRun:
 
     async def _emit_result(
         self,
+        tool_id: str,
         *,
         call_id: str | None,
         slug: str,
@@ -273,6 +317,7 @@ class AssistantRun:
                 mandate_budget_cents=budget,
             ),
         )
+        self.pending_calls.pop(tool_id, None)
 
     # ---- tools
 
@@ -286,15 +331,14 @@ class AssistantRun:
             Matching agents with slug, name, description, price (cents per call) and example requests.
         """
         tool_id = self._tool_id("find")
-        self.out.emit(
-            EventName.TOOL_START,
+        self._start_tool(
             ToolStartData(
                 id=tool_id,
                 tool="find_agents",
                 kind="search",
                 title="Searched the agent directory",
                 target=_clip(need, 80),
-            ),
+            )
         )
         try:
             ranked = await directory.search(need, limit=DISCOVER_TOP_N, fallback=True)
@@ -327,11 +371,11 @@ class AssistantRun:
                 discovered.append(d)
                 self.discovered[item.slug] = d
             self.out.emit(EventName.A2A_DISCOVER, A2ADiscoverData(query=_clip(need, 200), agents=discovered))
-            self.out.emit(EventName.TOOL_END, ToolEndData(id=tool_id, tool="find_agents", status="completed"))
+            self._end_tool(tool_id, "completed")
             return {"agents": agents}
         except Exception:
             log.exception("assistant_find_agents_failed")
-            self.out.emit(EventName.TOOL_END, ToolEndData(id=tool_id, tool="find_agents", status="error"))
+            self._end_tool(tool_id, "error")
             return {"agents": [], "error": "The directory is unavailable right now."}
 
     async def _fetch_card(self, http: httpx.AsyncClient, url: str) -> dict | None:
@@ -364,21 +408,26 @@ class AssistantRun:
             agent = await load_a2a_agent(slug)
         except ApiError as err:
             load_error = err
+        except Exception:
+            log.warning("assistant_agent_load_failed slug=%s", slug, exc_info=True)
+            load_error = ApiError(503, Codes.SERVICE_UNAVAILABLE, "This agent is temporarily unavailable.")
         name = agent.title if agent else (self.discovered[slug].name if slug in self.discovered else slug)
         preview = _clip(request or "", REQUEST_PREVIEW_CHARS)
-        self.out.emit(
-            EventName.TOOL_START,
-            ToolStartData(
-                id=tool_id, tool="call_agent", kind="a2a", title=f"Called {name}", target=slug[:80]
-            ),
+        self._start_tool(
+            ToolStartData(id=tool_id, tool="call_agent", kind="a2a", title=f"Called {name}", target=slug[:80])
         )
 
         async def reject(
-            code: str, *, price: int = 0, agent_name: str = name, call_sent: bool = True
+            code: str,
+            *,
+            price: int = 0,
+            agent_name: str = name,
+            call_sent: bool = True,
+            note: str = "Rejected before sending; not charged.",
         ) -> dict:
             if call_sent:
-                self.out.emit(
-                    EventName.A2A_CALL,
+                self._announce_call(
+                    tool_id,
                     A2ACallData(
                         call_id=None,
                         slug=slug,
@@ -388,18 +437,19 @@ class AssistantRun:
                         request_preview=preview,
                     ),
                 )
-            await self._emit_result(call_id=None, slug=slug, status="rejected", error_code=code)
-            self.out.emit(EventName.TOOL_END, ToolEndData(id=tool_id, tool="call_agent", status="error"))
-            return {
-                "ok": False,
-                "error_code": code,
-                "charged_cents": 0,
-                "note": "Rejected before sending; not charged.",
-            }
+            await self._emit_result(tool_id, call_id=None, slug=slug, status="rejected", error_code=code)
+            self._end_tool(tool_id, "error")
+            return {"ok": False, "error_code": code, "charged_cents": 0, "note": note}
 
-        # a. call limit
+        # a. call limit, and enough turn time left to wait for a whole call (never cut one short)
         if self.calls > MAX_CALLS_PER_TURN:
             return await reject(Codes.CALL_LIMIT, call_sent=False)
+        if self._remaining_s() < self.settings.a2a_call_timeout_s:
+            return await reject(
+                Codes.TURN_TIMEOUT,
+                call_sent=False,
+                note="Not enough time is left in this turn for another call; not sent, not charged.",
+            )
         if not (request or "").strip():
             return await reject(Codes.VALIDATION_ERROR)
 
@@ -420,12 +470,15 @@ class AssistantRun:
         except ApiError as err:
             log.info("assistant_call_rejected slug=%s code=%s", slug, err.code)
             return await reject(err.code, price=price, agent_name=name)
+        except Exception:
+            log.warning("assistant_precheck_failed slug=%s", slug, exc_info=True)
+            return await reject(Codes.SERVICE_UNAVAILABLE, price=price, agent_name=name)
 
         # c. send over HTTP
         message_id = uuid.uuid4().hex
         call_id = call_id_for(mandate.mandate_id, message_id)
-        self.out.emit(
-            EventName.A2A_CALL,
+        self._announce_call(
+            tool_id,
             A2ACallData(
                 call_id=call_id,
                 slug=slug,
@@ -445,7 +498,8 @@ class AssistantRun:
             log.warning("assistant_call_failed slug=%s error=%s", slug, type(exc).__name__)
             error_code = Codes.UPSTREAM_ERROR
 
-        call = await self._read_call(call_id)
+        call = await self._settled_call(call_id)
+        charge_pending = call is not None and call.get("status") == "running"
         charged = int(call.get("charged_cents", 0)) if call else 0
         share = int(call.get("creator_share_cents", 0)) if call else 0
         if error_code is None and (state not in ("TASK_STATE_COMPLETED", "message") or not answer.strip()):
@@ -457,7 +511,17 @@ class AssistantRun:
             status: Literal["failed", "rejected"] = (
                 "rejected" if http_status is not None and 400 <= http_status < 500 else "failed"
             )
+            if charge_pending:
+                note = (
+                    "The agent did not answer in time; its charge is still pending "
+                    "(charged only if it finishes)."
+                )
+            elif charged:
+                note = "The agent finished after the connection failed; this call was charged."
+            else:
+                note = "Not charged."
             await self._emit_result(
+                tool_id,
                 call_id=call_id,
                 slug=slug,
                 status=status,
@@ -465,10 +529,11 @@ class AssistantRun:
                 creator_share_cents=share,
                 error_code=error_code,
             )
-            self.out.emit(EventName.TOOL_END, ToolEndData(id=tool_id, tool="call_agent", status="error"))
-            return {"ok": False, "error_code": error_code, "charged_cents": charged}
+            self._end_tool(tool_id, "error")
+            return {"ok": False, "error_code": error_code, "charged_cents": charged, "note": note}
 
         await self._emit_result(
+            tool_id,
             call_id=call_id,
             slug=slug,
             status="completed",
@@ -476,7 +541,7 @@ class AssistantRun:
             creator_share_cents=share,
             answer=answer,
         )
-        self.out.emit(EventName.TOOL_END, ToolEndData(id=tool_id, tool="call_agent", status="completed"))
+        self._end_tool(tool_id, "completed")
         return {"ok": True, "agent": name, "answer": answer[:ANSWER_TO_MODEL_CHARS], "charged_cents": charged}
 
     async def _send(self, slug: str, request: str, message_id: str) -> list[dict]:
@@ -497,6 +562,17 @@ class AssistantRun:
             finally:
                 await client.close()
         return out
+
+    async def _settled_call(self, call_id: str) -> dict | None:
+        """The call doc, waiting briefly (bounded by the turn) while it is still ``running``: the server
+        settles a run it gave up on before the client times out, so a short wait finds the final charge."""
+        call = await self._read_call(call_id)
+        loop = asyncio.get_running_loop()
+        until = loop.time() + max(0.0, min(CALL_SETTLE_WAIT_S, self._remaining_s() - 1.0))
+        while call is not None and call.get("status") == "running" and loop.time() < until:
+            await asyncio.sleep(CALL_SETTLE_POLL_S)
+            call = await self._read_call(call_id)
+        return call
 
     async def _read_call(self, call_id: str) -> dict | None:
         try:
@@ -561,8 +637,9 @@ class AssistantRun:
                 run_config=run_config,
             )
             partial_seen = False
+            self.deadline = asyncio.get_running_loop().time() + settings.turn_total_timeout_s
             try:
-                async with asyncio.timeout(settings.turn_total_timeout_s):
+                async with asyncio.timeout_at(self.deadline):
                     async for ev in agen:
                         if self.abort.is_set():
                             break
@@ -622,6 +699,10 @@ class AssistantRun:
                 outcome = "failed"
             else:
                 outcome = "ok"
+            try:
+                await self.close_open_frames(error[0] if error is not None else Codes.AGENT_RUN_FAILED)
+            except Exception:
+                log.exception("assistant_close_frames_failed")
             if error is not None:
                 self.out.emit(
                     EventName.ERROR,
