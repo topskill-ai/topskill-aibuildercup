@@ -29,7 +29,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -39,8 +38,10 @@ from topskill.agents.avatar import store_avatar
 from topskill.agents.deps import billing
 from topskill.agents.schemas import ConfigPatch, CreateAgentRequest, UpdateAgentRequest
 from topskill.auth import CurrentUser, ensure_user, to_current_user
+from topskill.config import get_settings
 from topskill.db import Col, get_db, utcnow
 from topskill.domain import AgentDoc
+from topskill.errors import configure_logging
 from topskill.repo import get_agent_by_slug
 from topskill.skills.service import create_skill_from_entries
 
@@ -528,7 +529,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(level=logging.INFO, stream=sys.stderr)
+    settings = get_settings()
+    configure_logging(level=settings.log_level, json_logs=False, project=settings.google_cloud_project)
     args = parse_args(argv)
     asyncio.run(run(args))
     return 0

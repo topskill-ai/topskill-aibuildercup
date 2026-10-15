@@ -250,23 +250,25 @@ async def create_agent(owner: CurrentUser, req: CreateAgentRequest) -> AgentDoc:
 
 
 async def _publish_tx(db: firestore.AsyncClient, agent: AgentDoc, version: AgentVersion) -> None:
+    """T5 as one atomic commit of four ``create`` writes.
+
+    ``create`` carries an ``exists=false`` precondition, so the commit fails as a whole with
+    ``AlreadyExists`` when ``slugs/{slug}`` was taken in the meantime (the agent id is fresh, so the slug is
+    the only document that can exist). No document is read inside the commit: read-then-create
+    transactions on one slug deadlock under concurrent publishes (the emulator and Firestore lock the read
+    document pessimistically) and then fail after all retries instead of letting exactly one win.
+    """
     slug_ref = db.collection(Col.SLUGS).document(agent.slug)
     agent_ref = db.collection(Col.AGENTS).document(agent.id)
     version_ref = agent_ref.collection(Col.VERSIONS).document("1")
     stats_ref = db.collection(Col.AGENT_STATS).document(agent.id)
-
-    @firestore.async_transactional
-    async def _tx(tx: Any) -> None:
-        snap = await slug_ref.get(transaction=tx)
-        if snap.exists:
-            raise slug_error(Codes.SLUG_TAKEN)
-        tx.create(slug_ref, {"agent_id": agent.id, "created_at": agent.created_at})
-        tx.create(agent_ref, agent.model_dump(mode="python"))
-        tx.create(version_ref, version.model_dump(mode="python"))
-        tx.create(stats_ref, {"agent_id": agent.id, "owner_uid": agent.owner_uid, **_STATS_ZERO})
-
+    batch = db.batch()
+    batch.create(slug_ref, {"agent_id": agent.id, "created_at": agent.created_at})
+    batch.create(agent_ref, agent.model_dump(mode="python"))
+    batch.create(version_ref, version.model_dump(mode="python"))
+    batch.create(stats_ref, {"agent_id": agent.id, "owner_uid": agent.owner_uid, **_STATS_ZERO})
     try:
-        await _tx(db.transaction())
+        await batch.commit()
     except (gexc.AlreadyExists, gexc.Conflict, gexc.FailedPrecondition) as exc:
         raise slug_error(Codes.SLUG_TAKEN) from exc
 

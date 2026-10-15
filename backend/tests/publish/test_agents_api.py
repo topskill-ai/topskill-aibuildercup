@@ -205,10 +205,10 @@ async def test_slug_taken_race_only_one_wins(client: httpx.AsyncClient, fake_bil
     slug = unique("race-")
     body = create_body([skill["id"]], slug=slug)
     results = await asyncio.gather(
-        *(client.post("/api/agents", json=body, headers=headers) for _ in range(3))
+        *(client.post("/api/agents", json=body, headers=headers) for _ in range(5))
     )
     codes = sorted(r.status_code for r in results)
-    assert codes == [201, 400, 400], [r.text for r in results]
+    assert codes == [201, 400, 400, 400, 400], [r.text for r in results]
     assert all(r.json()["code"] == "slug_taken" for r in results if r.status_code == 400)
     winner = next(r.json() for r in results if r.status_code == 201)
     slug_doc = (await get_db().collection(Col.SLUGS).document(slug).get()).to_dict()
