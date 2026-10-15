@@ -25,7 +25,7 @@ Passwords live in the owner's password manager, never in this repo.
 
 ## Warm-up (30 min before recording)
 
-1. `curl -s https://topskill-api-920441209758.asia-southeast1.run.app/healthz` → `env: prod`, expected sha.
+1. `curl -s https://topskill-api-920441209758.asia-southeast1.run.app/health` → `env: prod`, expected sha (not `/healthz`: Cloud Run reserves paths ending in `z`).
 2. `deploy/scripts/smoke_prod.sh` (with credentials) → `smoke OK`.
 3. Open `/a/visa-advisor` once and ask one throw-away question (warms ADK imports, model and File Search paths) with a non-recording account.
 4. Run one Enterprise Assistant turn end-to-end with a throw-away mandate.

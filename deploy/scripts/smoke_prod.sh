@@ -10,6 +10,8 @@
 #                                                        #   ready files (SMOKE_KNOWLEDGE_AGENT_ID or auto)
 #   deploy/scripts/smoke_prod.sh --base http://127.0.0.1:8000 --dev-user smoke-creator
 #                                                        # local stack with the dev auth bypass
+#   deploy/scripts/smoke_prod.sh --allow-missing         # walking skeleton: a 404 from a domain
+#                                                        #   router that is not merged yet is "absent"
 #
 # The signed-in account should be a creator (it is upgraded with POST /api/me/become-creator if
 # not). Credentials are read from the environment only and never printed. Exit code 1 on failure.
@@ -32,6 +34,8 @@ ap.add_argument("--base", default=os.environ.get("SMOKE_API_BASE", PROD_API))
 ap.add_argument("--dev-user", default=None, help="use X-Dev-User auth (local stack only)")
 ap.add_argument("--knowledge", action="store_true", help="also run one knowledge search")
 ap.add_argument("--max-agents", type=int, default=3)
+ap.add_argument("--allow-missing", action="store_true",
+                help="treat 404 as 'absent' (domain routers not merged yet); 5xx still fails")
 args = ap.parse_args(sys.argv[1:])
 BASE = args.base.rstrip("/")
 is_local = urllib.parse.urlparse(BASE).hostname in {"127.0.0.1", "localhost"}
@@ -45,6 +49,7 @@ headers: dict[str, str] = {}
 def call(method: str, path: str, *, body=None, query=None, auth=False, ok_404=False, must=True, label=None):
     """One request. Fails on 5xx / no response / 401 with credentials; with must=True (MUST endpoints,
     SPEC 6.4) also on any other non-2xx, except a 404 when ok_404 (SHOULD endpoint not built)."""
+    ok_404 = ok_404 or args.allow_missing
     qs = urllib.parse.urlencode({k: v for k, v in (query or {}).items() if v is not None})
     url = BASE + path + (f"?{qs}" if qs else "")
     data = json.dumps(body).encode() if body is not None else None
@@ -123,12 +128,70 @@ def sign_in() -> bool:
 
 
 # ---- public -------------------------------------------------------------------------------
-status, health = call("GET", "/healthz")
-if status == 200 and isinstance(health, dict):
-    print(f"healthz: env={health.get('env')} version={health.get('version')}")
-    if not is_local and health.get("env") != "prod":
-        failures.append(f"/healthz env is {health.get('env')!r}, expected 'prod'")
+# Cloud Run's front end reserves URL paths ending in "z": /healthz answers a Google 404 from outside
+# (the in-container startup probe still uses it). Prod therefore uses the /health alias when present.
+health = None
+for path in ("/healthz",) if is_local else ("/health",):
+    status, body = call("GET", path, ok_404=not is_local)
+    if status == 200 and isinstance(body, dict):
+        health = body
+        print(f"{path}: env={body.get('env')} version={body.get('version')}")
+        if not is_local and body.get("env") != "prod":
+            failures.append(f"{path} env is {body.get('env')!r}, expected 'prod'")
+if health is None and not is_local:
+    print("note: no /health alias on this build; liveness checked via /api/public/meta only")
+
+
+def preflight(origin: str, allowed: bool) -> None:
+    """CORS preflight as the browser sends it for an authenticated JSON call (SPEC 2, decision 2)."""
+    req = urllib.request.Request(BASE + "/api/me", method="OPTIONS", headers={
+        "Origin": origin,
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "authorization,content-type",
+    })
+    try:
+        with opener.open(req, timeout=30) as resp:
+            status, acao = resp.status, resp.headers.get("Access-Control-Allow-Origin")
+    except urllib.error.HTTPError as e:
+        status, acao = e.code, e.headers.get("Access-Control-Allow-Origin")
+    except Exception as e:
+        status, acao = 0, None
+        failures.append(f"CORS preflight {origin}: {type(e).__name__}: {e}")
+    good = (status == 200 and acao == origin) if allowed else (acao != origin and status < 500)
+    if not good:
+        failures.append(f"CORS preflight {origin}: HTTP {status}, allow-origin={acao!r}")
+    results.append(("ok" if good else "FAIL", f"OPTIONS /api/me (Origin {origin})", status, f"allow={acao}"))
+
+
+if is_local:
+    preflight("http://localhost:5173", allowed=True)
+else:
+    preflight("https://top-skill.web.app", allowed=True)
+    preflight("https://top-skill.firebaseapp.com", allowed=True)
+    preflight("https://top-skill--smoke-0000abcd.web.app", allowed=True)
+preflight("https://evil.example.com", allowed=False)
 call("GET", "/api/public/meta")
+
+
+def expect_401(label: str, extra: dict[str, str]) -> None:
+    """Auth is enforced: no token → 401; in prod the X-Dev-* bypass headers are ignored (SPEC 4.2)."""
+    req = urllib.request.Request(BASE + "/api/me", headers={"Accept": "application/json", **extra})
+    try:
+        with opener.open(req, timeout=30) as resp:
+            status = resp.status
+    except urllib.error.HTTPError as e:
+        status = e.code
+    except Exception:
+        status = 0
+    good = status == 401
+    if not good:
+        failures.append(f"GET /api/me ({label}): HTTP {status}, expected 401")
+    results.append(("ok" if good else "FAIL", f"GET /api/me ({label})", status, "expect 401"))
+
+
+expect_401("no token", {})
+if not is_local:
+    expect_401("X-Dev-User ignored in prod", {"X-Dev-User": "smoke-probe", "X-Dev-Role": "creator"})
 status, jwks = call("GET", "/.well-known/jwks.json")
 if status == 200 and not (isinstance(jwks, dict) and jwks.get("keys")):
     failures.append("jwks.json has no keys")
