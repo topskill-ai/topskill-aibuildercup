@@ -60,25 +60,35 @@ def _stem(term: str) -> str:
     return term
 
 
-def score(agent: AgentDoc, query_terms: list[str]) -> float:
-    """Sum over terms and fields of ``weight * log(1 + hits)`` (prefix match on word stems)."""
-    if not query_terms:
-        return 0.0
+def _words(agent: AgentDoc) -> dict[str, list[str]]:
     fields = {
         "title": agent.title,
         "tagline": agent.tagline,
         "capabilities": " ".join(f"{c.name} {c.description}" for c in agent.capabilities),
         "description": agent.description,
     }
-    words = {name: [_stem(w) for w in _TERM_RE.findall(text.lower())] for name, text in fields.items()}
+    return {name: [_stem(w) for w in _TERM_RE.findall(text.lower())] for name, text in fields.items()}
+
+
+def _term_score(words: dict[str, list[str]], term: str) -> float:
+    """Sum over fields of ``weight * log(1 + hits)`` (prefix match on word stems)."""
+    stem = _stem(term)
     total = 0.0
-    for term in query_terms:
-        stem = _stem(term)
-        for name, weight in _WEIGHTS:
-            hits = sum(1 for w in words[name] if w.startswith(stem) or (stem.startswith(w) and len(w) >= 4))
-            if hits:
-                total += weight * math.log(1 + hits)
+    for name, weight in _WEIGHTS:
+        hits = sum(1 for w in words[name] if w.startswith(stem) or (stem.startswith(w) and len(w) >= 4))
+        if hits:
+            total += weight * math.log(1 + hits)
     return total
+
+
+def rank(agents: list[AgentDoc], query_terms: list[str]) -> list[tuple[float, AgentDoc]]:
+    """Keyword score per agent; each term is weighted by its rarity among ``agents``
+    (``log(1 + N / df)``), so a distinctive word outweighs one most agents share."""
+    words = [_words(a) for a in agents]
+    per_term = {t: [_term_score(w, t) for w in words] for t in query_terms}
+    n = len(agents)
+    idf = {t: math.log(1 + n / max(1, sum(1 for s in scores if s > 0))) for t, scores in per_term.items()}
+    return [(sum(per_term[t][i] * idf[t] for t in query_terms), a) for i, a in enumerate(agents)]
 
 
 def to_directory_agent(agent: AgentDoc) -> DirectoryAgent:
@@ -117,7 +127,7 @@ async def search(q: str | None, *, limit: int = TOP_N, fallback: bool = False) -
     query_terms = terms(q or "")
     if not query_terms:
         return [to_directory_agent(a) for a in agents[:limit]]
-    scored = [(score(a, query_terms), i, a) for i, a in enumerate(agents)]
+    scored = [(points, i, a) for i, (points, a) in enumerate(rank(agents, query_terms))]
     matched = sorted((s for s in scored if s[0] > 0), key=lambda s: (-s[0], s[1]))
     if not matched and fallback:
         return [to_directory_agent(a) for a in agents[:limit]]
