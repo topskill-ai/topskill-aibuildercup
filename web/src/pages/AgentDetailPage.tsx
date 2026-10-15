@@ -16,7 +16,7 @@ import { TabPanel, Tabs } from "@/components/ui/Tabs";
 import { cn } from "@/lib/cn";
 import { KnowledgeTab } from "@/features/knowledge/KnowledgeTab";
 import { RecordsTab } from "@/features/records/RecordsTab";
-import { useAgent } from "@/features/studio/api";
+import { useAgent, useKnowledgeSettle } from "@/features/studio/api";
 import { KnowledgeBadge, OverviewTab } from "@/features/studio/OverviewTab";
 import { SettingsTab } from "@/features/studio/SettingsTab";
 import { ShareTab } from "@/features/studio/ShareTab";
@@ -44,6 +44,7 @@ export default function AgentDetailPage() {
   const [updateOpen, setUpdateOpen] = useState(false);
   const q = useAgent(id);
   const agent = q.data;
+  useKnowledgeSettle(agent);
 
   const setTab = (t: Tab) =>
     setParams(

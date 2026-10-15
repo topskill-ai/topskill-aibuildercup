@@ -30,15 +30,20 @@ export function UpdateVersionDialog({
 }) {
   const [note, setNote] = useState("");
   const update = useAgentCacheUpdater();
+  // POST /versions sets status=active (SPEC §6.4), so updating a paused agent also resumes it.
+  const resumes = agent.status === "paused";
   const m = useMutation({
     mutationFn: () => agentApi.newVersion(agent.id, note),
     onSuccess: (a) => {
       update(a);
-      toast.success(`Version ${a.active_version} is live`);
+      toast.success(resumes ? `Version ${a.active_version} is live and the agent is active again` : `Version ${a.active_version} is live`);
       setNote("");
       onOpenChange(false);
     },
   });
+  const submit = () => {
+    if (!m.isPending) m.mutate();
+  };
   return (
     <Dialog
       open={open}
@@ -51,8 +56,8 @@ export function UpdateVersionDialog({
           <Button variant="outline" disabled={m.isPending} onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button icon={<Rocket className="h-4 w-4" />} loading={m.isPending} onClick={() => m.mutate()}>
-            Update to version {agent.version_count + 1}
+          <Button icon={<Rocket className="h-4 w-4" />} loading={m.isPending} onClick={submit}>
+            {resumes ? "Update and resume" : `Update to version ${agent.version_count + 1}`}
           </Button>
         </>
       }
@@ -65,13 +70,21 @@ export function UpdateVersionDialog({
             value={note}
             maxLength={200}
             placeholder="e.g. Shorter answers, new checklist"
+            disabled={m.isPending}
             onChange={(e) => setNote(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") m.mutate();
+              if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+              e.preventDefault();
+              submit();
             }}
           />
         )}
       </Field>
+      {resumes ? (
+        <p className="mt-3 rounded-control border border-warning/30 bg-warning-soft px-3 py-2 text-[13px] text-warning" role="note">
+          This also resumes the agent: visitors and AI agents can use it again.
+        </p>
+      ) : null}
       {m.error ? <ErrorLine className="mt-3" error={m.error} /> : null}
     </Dialog>
   );

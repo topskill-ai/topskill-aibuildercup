@@ -1,6 +1,8 @@
 /** Share: public page URL, A2A Agent Card URL and endpoint (MUST), card JSON preview and curl (SHOULD). */
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink } from "lucide-react";
+import { throwForStatus } from "@/api/client";
+import { ErrorCodes, hasCode } from "@/api/errors";
 import type { Agent } from "@/api/types";
 import { Badge } from "@/components/ui/Badge";
 import { buttonClasses } from "@/components/ui/Button";
@@ -12,7 +14,8 @@ import { a2aPriceLabel } from "./labels";
 
 async function fetchCard(url: string, signal: AbortSignal): Promise<unknown> {
   const res = await fetch(url, { signal, credentials: "omit", headers: { Accept: "application/json" } });
-  if (!res.ok) throw new Error(`The Agent Card returned HTTP ${res.status}.`);
+  // Keeps the JSON error envelope (code, message, trace id) so the preview error shows a trace id.
+  await throwForStatus(res);
   return res.json();
 }
 
@@ -88,7 +91,15 @@ export function ShareTab({ agent }: { agent: Agent }) {
               {card.isPending ? (
                 <Skeleton className="h-48 w-full" />
               ) : card.error ? (
-                <ErrorLine error={card.error} onRetry={() => void card.refetch()} />
+                <ErrorLine
+                  error={card.error}
+                  message={
+                    hasCode(card.error, ErrorCodes.agent_offline)
+                      ? "The Agent Card is offline while the agent is paused."
+                      : undefined
+                  }
+                  onRetry={() => void card.refetch()}
+                />
               ) : (
                 <pre className="max-h-96 overflow-auto rounded-control bg-slate-900 p-4 font-mono text-xs leading-5 text-slate-100">
                   {JSON.stringify(card.data, null, 2)}

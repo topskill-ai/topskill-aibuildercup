@@ -1,5 +1,6 @@
 /** Creator agent + dashboard API hooks (SPEC §6.4 Agents — creator, Wallet & billing). */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { api } from "@/api/client";
 import { queryKeys } from "@/api/queryClient";
 import type {
@@ -18,6 +19,7 @@ import type {
   AccentColor,
   RecordField,
 } from "@/api/types";
+import { useKnowledge } from "@/features/knowledge/api";
 
 const base = (agentId: string) => `/api/agents/${encodeURIComponent(agentId)}`;
 
@@ -64,6 +66,22 @@ export function useAgent(agentId: string, opts: { poll?: boolean } = {}) {
     enabled: Boolean(agentId),
     refetchInterval: (q) => (opts.poll || (q.state.data?.knowledge.processing ?? 0) > 0 ? 4000 : false),
   });
+}
+
+/**
+ * While the agent reports knowledge files as processing, also poll the knowledge list: only
+ * `GET /knowledge` sweeps files stuck past 10 minutes (SPEC §6.4), so polling the agent alone could
+ * spin forever after an interrupted ingestion. Each change in the list refreshes the agent counts.
+ */
+export function useKnowledgeSettle(agent: Agent | undefined) {
+  const qc = useQueryClient();
+  const agentId = agent?.id ?? "";
+  const processing = (agent?.knowledge.processing ?? 0) > 0;
+  const list = useKnowledge(agentId, processing);
+  const signature = list.data ? list.data.items.map((f) => `${f.file_id}:${f.status}`).join("|") : null;
+  useEffect(() => {
+    if (signature !== null && agentId) void qc.invalidateQueries({ queryKey: queryKeys.agent(agentId) });
+  }, [signature, agentId, qc]);
 }
 
 export interface Earnings {
