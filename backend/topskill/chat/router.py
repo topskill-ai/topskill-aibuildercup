@@ -92,7 +92,7 @@ async def chat(slug: str, body: ChatRequest, user: CurrentUser = Depends(get_cur
     else:
         conversation_id, is_new = new_id("cnv"), True
 
-    locks.acquire_turn(conversation_id)
+    locks.acquire_turn(conversation_id, user.uid)
     released = False
 
     def release() -> None:

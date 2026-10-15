@@ -350,6 +350,27 @@ def test_concurrency_limit(monkeypatch: pytest.MonkeyPatch) -> None:
             locks.release_turn("cnv_c1")
 
 
+def test_per_user_turn_limit() -> None:
+    convs = [f"cnv_u{i}" for i in range(locks.MAX_TURNS_PER_USER + 1)]
+    for c in convs[:-1]:
+        locks.acquire_turn(c, "u_busy")
+    try:
+        with pytest.raises(ApiError) as err:
+            locks.acquire_turn(convs[-1], "u_busy")
+        assert err.value.status == 429 and err.value.code == "rate_limited"
+        assert not locks.is_busy(convs[-1])
+        locks.acquire_turn("cnv_other_user", "u_other")  # other accounts are not affected
+        locks.release_turn("cnv_other_user")
+        locks.release_turn(convs[0])
+        locks.release_turn(convs[0])  # idempotent: frees one slot only once
+        locks.acquire_turn(convs[-1], "u_busy")
+        convs.append(convs.pop(0))
+    finally:
+        for c in convs:
+            locks.release_turn(c)
+    assert locks._turns_by_uid.get("u_busy") is None
+
+
 def test_deps_resolve_the_real_packages() -> None:
     import importlib
 

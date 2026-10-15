@@ -1263,7 +1263,7 @@ writes (only now):
 - `tx.set` the two message docs (`u_{request_id}`, `m_{request_id}`; deterministic ids, so a retried transaction rewrites the same docs).
 - `conversation_exists == False` → `tx.create(conv_ref, ConversationDoc(…, title=<first user message ≤ 80 chars>, rounds_ok=1 if succeeded else 0, message_count=2, created_at=now, updated_at=now))`.
 - `conversation_exists == True` → `tx.update(conv_ref, {"rounds_ok": Increment(1 if succeeded else 0), "message_count": Increment(2), "last_turn_id": turn_id, "updated_at": now})` — `title` and `created_at` are never touched.
-- Never let a balance go negative (two-tab race under-charges one round — accepted).
+- Never let a balance go negative (parallel turns that all passed the advisory preflight under-charge; accepted, and bounded by the per-account limit of 3 running turns, §10.4 step 3).
 - If the transaction raises, nothing is persisted (including the messages); chat logs `settlement_failed` at ERROR with the trace id and emits `error{service_unavailable}` + `done{billing:null}` (with `conversation_id: null` if the conversation is new).
 - Settlement runs **before** `done` is written, so the client's `done.billing` reflects committed state.
 - The chat writer receives `RoundCharge` *before* writes are built (settle computes, then calls `write_messages(tx, charge, conversation_exists)`), so the model message stores `charge`.
@@ -1555,7 +1555,7 @@ async def build_runtime_agent(agent: AgentDoc, version: AgentVersion, *, channel
 **Turn algorithm** (`chat/runtime.py`, `chat/router.py`):
 1. Auth (user). Load agent by slug: 404 / 410. Load active version.
 2. Conversation: given id → load; missing, `agent_id != agent.id` or `visitor_uid != user.uid` → 404 `session_not_owned` (client ids are never used to create conversations); `rounds_ok >= MAX_ROUNDS_PER_CONVERSATION` → 400. No id → `new_id("cnv")` (doc is written at settlement; T2 reads it to know whether it exists).
-3. Locks (`chat/locks.py`): per-conversation `asyncio.Lock` registry (locked → 409 `turn_in_progress`); global `asyncio.Semaphore(MAX_CONCURRENT_TURNS)` non-blocking acquire → 429.
+3. Locks (`chat/locks.py`): per-conversation `asyncio.Lock` registry (locked → 409 `turn_in_progress`); at most `MAX_TURNS_PER_USER = 3` running turns per account (→ 429 `rate_limited`), so one account cannot hold every slot or race many paid rounds past the advisory balance check; global `asyncio.Semaphore(MAX_CONCURRENT_TURNS)` non-blocking acquire → 429.
 4. `quote = await deps.billing.preflight_round(agent, user)` (opens payer and owner wallets).
 5. `request_id = "turn_" + uuid4().hex`. Register abort flag `(conversation_id, turn_id) → asyncio.Event` with owner uid.
 6. Start a **producer task** with `tasks.spawn(…, name=f"turn:{request_id}")` that runs the turn and puts `(event, data)` into an `asyncio.Queue`; return `sse_response(consumer())`. The consumer only drains the queue. On client disconnect (generator closed/cancelled) it sets the abort flag; the producer keeps running to completion of persistence (it is a separate task, so cancellation of the response does not kill settlement). The outcome becomes `aborted` only if the flag interrupted a still-running runner (§7.4 rule 6).
