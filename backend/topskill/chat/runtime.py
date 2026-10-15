@@ -22,6 +22,11 @@ Live findings (Vertex AI ``global``, google-adk 2.12.0, google-genai 2.31.0, 202
   ``grounding_metadata`` is a camelCase ``dict`` instead of ``types.GroundingMetadata`` (normalised in
   ``chat.events``). Bypass is therefore used only when a model that may serve the request is not
   gemini-3* (see ``agent_factory.search_mode_for``).
+* ADK 2.12 does not raise model or tool failures out of ``run_async``: its workflow node runner yields an
+  error ``Event`` (``error_code`` = API status name such as ``RESOURCE_EXHAUSTED`` or the exception class
+  name, ``error_message`` = ``str(exc)`` starting with the HTTP code). Fallback and ``rate_limited`` are
+  therefore decided from that event (:func:`failure_status`). An empty model reply also becomes an error
+  event (``MODEL_RETURNED_NO_CONTENT``), so it surfaces as ``agent_run_failed`` + outcome ``failed``.
 """
 
 from __future__ import annotations

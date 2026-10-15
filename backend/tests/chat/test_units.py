@@ -152,7 +152,7 @@ def test_search_modes() -> None:
     assert agent_name("visa-advisor-3fa9c1") == "agent_visa_advisor_3fa9c1"
 
 
-async def test_a2a_agent_uses_portable_thinking(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_a2a_agent_uses_portable_thinking(monkeypatch: pytest.MonkeyPatch, doubles) -> None:
     agent, version = _agent(), _version()
     llm_agent = await build_runtime_agent(agent, version, channel="a2a")
     cfg = llm_agent.generate_content_config
