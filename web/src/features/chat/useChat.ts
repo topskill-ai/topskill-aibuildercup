@@ -108,7 +108,8 @@ export function useChat(slug: string, agent: Pick<PublicAgent, "title">) {
         dispatch({ type: "reset", messages: conv.messages });
       })
       .catch((err: unknown) => {
-        if (ctrl.signal.aborted) return;
+        // A turn sent meanwhile re-validates the id itself (404 `session_not_owned` → start over).
+        if (ctrl.signal.aborted || activeRef.current) return;
         if (hasCode(err, ErrorCodes.session_not_owned, ErrorCodes.not_found)) {
           startOver();
           toast.info("Started a new conversation for this account");

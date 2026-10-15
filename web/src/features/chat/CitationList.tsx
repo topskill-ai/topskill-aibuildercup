@@ -132,7 +132,8 @@ export function SearchEntryPoint({ html, className }: { html: string; className?
         sandbox="allow-popups allow-popups-to-escape-sandbox"
         referrerPolicy="no-referrer"
         loading="lazy"
-        className="block h-[76px] w-full rounded-control border-0 bg-transparent"
+        // Google's carousel is ~56px tall (verified live); the rest leaves room for a scrollbar.
+        className="block h-[68px] w-full rounded-control border-0 bg-transparent"
       />
     </div>
   );
