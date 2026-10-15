@@ -15,6 +15,7 @@
  * - `done` closes everything still open. A synthesized `connection_lost` done carries no `mandate`.
  */
 import type {
+  Mandate,
   A2ACallData,
   A2ADiscoverData,
   A2AResultData,
@@ -381,6 +382,12 @@ export function applyCounterEvent(counters: MandateCounters | null, event: Assis
     return { ...counters, spentCents: m.spent_cents, budgetCents: m.budget_cents, calls: m.calls };
   }
   return counters;
+}
+
+/** A mandate with its counters replaced by the live stream values (same mandate id only). */
+export function liveMandate(m: Mandate, counters: MandateCounters | null): Mandate {
+  if (!counters || counters.id !== m.id) return m;
+  return { ...m, spent_cents: counters.spentCents, budget_cents: counters.budgetCents, calls: counters.calls };
 }
 
 // ---------------------------------------------------------------------------------------------
