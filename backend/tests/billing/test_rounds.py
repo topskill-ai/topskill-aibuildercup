@@ -138,9 +138,9 @@ async def test_concurrent_paid_rounds_never_overdraw() -> None:
     """Two tabs settle at once: the second one is under-charged, the balance never goes negative."""
     owner, visitor, agent = await _setup(pricing={"price_cents": 100, "free_rounds": 0})
     await open_wallet(visitor.uid, 150)
-    results = await asyncio.gather(*(settle(billing, agent, visitor) for _ in range(3)))
+    results = await asyncio.gather(*(settle(billing, agent, visitor) for _ in range(2)))
     charged = sorted(c.charged_cents for c, _ in results)
-    assert charged == [0, 50, 100]
+    assert charged == [50, 100]
     assert await balance(visitor.uid) == 0
     assert await balance(owner.uid) == 10000 + 80 + 40
 

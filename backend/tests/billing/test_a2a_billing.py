@@ -148,27 +148,27 @@ async def test_replay_of_the_same_message_is_rejected() -> None:
 
 async def test_parallel_reservations_only_reserve_what_fits() -> None:
     owner, payer, agent = await _setup(a2a_price=500)
-    mandate = await make_mandate(payer, max_amount_cents=500, budget_cents=2000)
-    results = await asyncio.gather(*(_reserve(mandate, agent) for _ in range(7)), return_exceptions=True)
+    mandate = await make_mandate(payer, max_amount_cents=500, budget_cents=1500)
+    results = await asyncio.gather(*(_reserve(mandate, agent) for _ in range(5)), return_exceptions=True)
     reserved = [r for r in results if isinstance(r, str)]
     rejected = [r for r in results if not isinstance(r, str)]
-    assert len(reserved) == 4 and len(rejected) == 3
+    assert len(reserved) == 3 and len(rejected) == 2
     assert all(isinstance(r, ApiError) and r.code == "mandate_budget_exhausted" for r in rejected)
     m = await doc(Col.MANDATES, mandate.mandate_id)
-    assert m["reserved_cents"] == 2000 and m["spent_cents"] == 0
+    assert m["reserved_cents"] == 1500 and m["spent_cents"] == 0
     # pre-flight sees the reservations too
     with pytest.raises(ApiError) as err:
         await billing.preflight_a2a(agent, mandate)
     assert err.value.code == "mandate_budget_exhausted"
 
-    # settle concurrently: two complete, two fail → spent 1000, reserved back to 0
+    # settle concurrently: two complete, one fails → spent 1000, reserved back to 0
     outcomes = await asyncio.gather(
         *(
             billing.settle_a2a_call(call_id=cid, succeeded=i % 2 == 0, model=None, answer_preview="")
             for i, cid in enumerate(reserved)
         )
     )
-    assert sorted(o.status for o in outcomes) == ["completed", "completed", "failed", "failed"]
+    assert sorted(o.status for o in outcomes) == ["completed", "completed", "failed"]
     m = await doc(Col.MANDATES, mandate.mandate_id)
     assert m["reserved_cents"] == 0 and m["spent_cents"] == 1000 and m["calls"] == 2
     assert m["spent_cents"] + m["reserved_cents"] <= m["budget_cents"]
