@@ -466,3 +466,19 @@ export function formatElapsed(ms: number): string {
   const s = total % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
 }
+
+/** Pricing form prefilled from a stored `Pricing` (agent Settings tab). */
+export function pricingFormFromPricing(p: Pricing): PricingForm {
+  const price = p.mode === "per_round" ? centsToInput(p.price_cents) : "1.00";
+  const a2a = centsToInput(p.a2a_price_cents);
+  return {
+    mode: p.mode,
+    price,
+    free_rounds: String(p.free_rounds),
+    a2a_enabled: p.a2a_enabled,
+    a2a_price: a2a,
+    // A stored A2A price that differs from the round price was set on purpose; keep it fixed.
+    a2a_price_touched: p.mode === "free" || p.a2a_price_cents !== p.price_cents,
+    rationale: "",
+  };
+}

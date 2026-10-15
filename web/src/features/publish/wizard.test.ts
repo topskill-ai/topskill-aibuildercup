@@ -11,6 +11,7 @@ import {
   identityEdited,
   nextStep,
   parsePricing,
+  pricingFormFromPricing,
   prevStep,
   pricingLine,
   slugLocalCheck,
@@ -238,5 +239,18 @@ describe("formatElapsed", () => {
     expect(formatElapsed(0)).toBe("0 s");
     expect(formatElapsed(52_400)).toBe("52 s");
     expect(formatElapsed(75_000)).toBe("1:15");
+  });
+});
+
+describe("pricingFormFromPricing", () => {
+  it("round-trips a stored Pricing through the form", () => {
+    const stored = { mode: "per_round" as const, price_cents: 100, free_rounds: 2, a2a_enabled: true, a2a_price_cents: 600 };
+    const form = pricingFormFromPricing(stored);
+    expect(form).toMatchObject({ price: "1.00", free_rounds: "2", a2a_price: "6.00", a2a_price_touched: true });
+    expect(parsePricing(form).pricing).toEqual(stored);
+    const same = pricingFormFromPricing({ ...stored, a2a_price_cents: 100 });
+    expect(same.a2a_price_touched).toBe(false);
+    const free = { mode: "free" as const, price_cents: 0, free_rounds: 0, a2a_enabled: true, a2a_price_cents: 200 };
+    expect(parsePricing(pricingFormFromPricing(free)).pricing).toEqual(free);
   });
 });

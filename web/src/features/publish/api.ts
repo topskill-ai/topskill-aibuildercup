@@ -1,8 +1,10 @@
 /** Publish-flow API calls (SPEC §6.4 Skills, Agents — creator). */
+import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
+import { useDebouncedValue } from "@/features/studio/hooks";
 import type { AccentColor, Agent, AgentDraft, Skill } from "@/api/types";
 import { skillFormData, type SkillUpload } from "./files";
-import type { AvatarRef, CreateAgentRequest } from "./wizard";
+import { slugLocalCheck, type AvatarRef, type CreateAgentRequest, type SlugStatus } from "./wizard";
 
 export type DraftQuality = "fast" | "best";
 
@@ -37,4 +39,27 @@ export function generateAvatar(prompt: string, accent: AccentColor): Promise<Ava
 
 export function createAgent(body: CreateAgentRequest): Promise<Agent> {
   return api.post<Agent>("/api/agents", body);
+}
+
+/**
+ * Live slug availability (debounced `GET /api/agents/slug-check`). Blank = auto slug.
+ * A failed check does not block publishing; the server re-checks on create.
+ */
+export function useSlugStatus(slug: string): SlugStatus {
+  const trimmed = slug.trim();
+  const debounced = useDebouncedValue(trimmed, 400);
+  const local = slugLocalCheck(trimmed);
+  const q = useQuery({
+    queryKey: ["slug-check", debounced],
+    queryFn: ({ signal }) => checkSlug(debounced, signal),
+    enabled: local === null && debounced === trimmed,
+    staleTime: 10_000,
+    retry: false,
+  });
+  if (local) return local;
+  if (debounced !== trimmed || q.isFetching || q.isPending) return { state: "checking" };
+  if (q.isError) return { state: "error" };
+  const data = q.data;
+  if (!data) return { state: "checking" };
+  return data.valid && data.available ? { state: "available" } : { state: "unavailable", reason: data.reason };
 }
