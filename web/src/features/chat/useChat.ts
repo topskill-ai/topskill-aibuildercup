@@ -150,6 +150,8 @@ export function useChat(slug: string, agent: Pick<PublicAgent, "title">) {
   const refreshBilling = useCallback(() => {
     void qc.invalidateQueries({ queryKey: queryKeys.billing(slug) });
     void qc.invalidateQueries({ queryKey: queryKeys.wallet });
+    // The info panel's conversation count changes after a first turn.
+    void qc.invalidateQueries({ queryKey: queryKeys.publicAgent(slug) });
   }, [qc, slug]);
 
   /**

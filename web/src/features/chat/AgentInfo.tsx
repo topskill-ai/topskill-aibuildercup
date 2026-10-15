@@ -6,7 +6,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { CopyField } from "@/components/ui/CopyField";
 import { Money } from "@/components/ui/Money";
 import { cn } from "@/lib/cn";
-import { formatNumber } from "@/lib/format";
+import { plural } from "@/lib/format";
 import { CapabilityIcon, FeatureBadges } from "../marketplace/AgentBits";
 import { priceSentence } from "../marketplace/pricing";
 
@@ -42,12 +42,12 @@ export function AgentInfoPanel({ agent }: { agent: PublicAgent }) {
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[13px] text-subtle">
           <span className="inline-flex items-center gap-1">
             <MessageSquare aria-hidden className="h-3.5 w-3.5" />
-            {formatNumber(agent.stats.conversations)} conversations
+            {plural(agent.stats.conversations, "conversation")}
           </span>
           {agent.a2a.enabled ? (
             <span className="inline-flex items-center gap-1">
               <Network aria-hidden className="h-3.5 w-3.5" />
-              {formatNumber(agent.stats.a2a_calls)} A2A calls
+              {plural(agent.stats.a2a_calls, "A2A call")}
             </span>
           ) : null}
         </div>
