@@ -1,5 +1,5 @@
 /** Wizard Step 4: address, accent, model, toggles and a read-only summary before Publish. */
-import { BookOpen, Check, ClipboardList, FileText, Globe, Loader2, X } from "lucide-react";
+import { BookOpen, Check, ClipboardList, FileText, Loader2, X } from "lucide-react";
 import { useMeta } from "@/api/meta";
 import type { Skill } from "@/api/types";
 import { Avatar } from "@/components/ui/Avatar";
@@ -9,6 +9,7 @@ import { Field, Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Switch } from "@/components/ui/Switch";
 import { formatBytes } from "@/lib/format";
+import { FeatureBadges } from "../marketplace/AgentBits";
 import { AccentPicker } from "./editors";
 import { SLUG_REASON_TEXT, parsePricing, pricingLine, type FieldErrors, type SlugStatus, type WizardForm } from "./wizard";
 
@@ -181,12 +182,14 @@ export function GoLiveStep({
             </div>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {g.web_search_enabled ? (
-              <Badge variant="outline" icon={<Globe className="h-3 w-3" />}>
-                Web
-              </Badge>
-            ) : null}
-            {pricing?.a2a_enabled ? <Badge variant="outline">A2A</Badge> : null}
+            <FeatureBadges
+              features={{
+                knowledge: knowledgeFiles.length > 0,
+                web_search: g.web_search_enabled,
+                records: form.records.enabled && form.records.fields.length > 0,
+                a2a: Boolean(pricing?.a2a_enabled),
+              }}
+            />
             {!g.listed ? <Badge variant="neutral">Unlisted</Badge> : null}
           </div>
         </CardBody>
