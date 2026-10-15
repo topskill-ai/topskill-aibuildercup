@@ -23,6 +23,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Building the app needs no I/O; keep logs quiet and never pick up a K_SERVICE guard here.
     os.environ.setdefault("LOG_LEVEL", "WARNING")
+    os.environ.setdefault("TRACING_ENABLED", "false")  # no exporter / ADC lookup for a schema dump
     sys.path.insert(0, str(BACKEND_DIR))
     from topskill.main import create_app
 

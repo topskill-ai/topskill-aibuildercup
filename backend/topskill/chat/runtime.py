@@ -87,6 +87,7 @@ from topskill.events import (
     StreamErrorData,
 )
 from topskill.gemini import RETRIABLE_STATUS_CODES, error_status, is_retriable, thinking_config
+from topskill.observability import chat_turn_span
 
 log = logging.getLogger(__name__)
 
@@ -642,7 +643,8 @@ def start_turn(ctx: TurnContext, *, on_finish: Callable[[], None]) -> AsyncItera
 
     async def producer() -> None:
         try:
-            await run_turn(ctx, queue.put_nowait)
+            with chat_turn_span(ctx) as turn_trace:  # P2 §18.3: parent span of the turn (ADK spans nest)
+                await run_turn(ctx, turn_trace.wrap(queue.put_nowait))
         finally:
             try:
                 on_finish()

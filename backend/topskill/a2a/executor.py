@@ -57,6 +57,7 @@ from topskill.config import get_settings
 from topskill.db import Col, get_db
 from topskill.domain import AgentDoc, AgentVersion
 from topskill.errors import ApiError, Codes
+from topskill.observability import a2a_call_span, current_turn, record_a2a_charge
 
 from . import _deps
 from .cards import build_card
@@ -151,13 +152,15 @@ async def settle_call(
     call_id: str, *, succeeded: bool, model: str | None, answer_preview: str, error_code: str | None = None
 ) -> Any:
     """``billing.settle_a2a_call`` through ``chat.get_deps()`` (idempotent T3)."""
-    return await _deps.billing().settle_a2a_call(
+    charge = await _deps.billing().settle_a2a_call(
         call_id=call_id,
         succeeded=succeeded,
         model=model,
         answer_preview=answer_preview[:ANSWER_PREVIEW_CHARS],
         error_code=error_code,
     )
+    record_a2a_charge(charge)  # onto the call's span, when one is current
+    return charge
 
 
 async def _settle_safely(
@@ -256,6 +259,10 @@ class TopSkillA2aExecutor(A2aAgentExecutor):
         self._state_for_task: dict[str, CallState] = {}
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
+        with a2a_call_span(context.task_id):  # P2 §18.3: parent span of the call (ADK spans nest)
+            await self._execute(context, event_queue)
+
+    async def _execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         call_ctx = context.call_context
         call_state = call_ctx.state if call_ctx is not None else {}
         call_id = call_state.get("a2a_call_id")
@@ -349,6 +356,9 @@ class TopSkillA2aExecutor(A2aAgentExecutor):
         return context
 
     async def _after_event(self, exec_ctx: ExecutorContext, event: Any, adk_event: Any) -> Any:
+        turn_trace = current_turn()
+        if turn_trace is not None:
+            turn_trace.on_adk_event(adk_event)
         st = _CALL.get()
         if st is not None:
             texts = _event_texts(event)

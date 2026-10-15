@@ -41,6 +41,7 @@ os.environ.update(
         "APP_VERSION": "test",
         "LOG_LEVEL": "INFO",
         "GUARD_BACKEND": "off",  # P2 guard: tests install topskill.guard.fake.FakeGuard explicitly
+        "TRACING_ENABLED": "false",
     }
 )
 os.environ.pop("K_SERVICE", None)

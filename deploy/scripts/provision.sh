@@ -177,4 +177,12 @@ if confirm "Grant roles/modelarmor.user to ${RUNTIME_SA}?"; then
   bind_project "serviceAccount:${RUNTIME_SA}" roles/modelarmor.user
 fi
 
+log "Tracing (P2, SPEC §18.3): Telemetry + Cloud Trace APIs, trace writer role for the runtime SA"
+run gcloud services enable --project "${PROJECT}" telemetry.googleapis.com cloudtrace.googleapis.com
+if confirm "Grant roles/telemetry.tracesWriter to ${RUNTIME_SA}?"; then
+  # OTLP spans to telemetry.googleapis.com (TRACING_ENABLED=true). Without it the app still serves;
+  # span export fails and is logged at most every 5 minutes.
+  bind_project "serviceAccount:${RUNTIME_SA}" roles/telemetry.tracesWriter
+fi
+
 log "Done. Next: firebase deploy --only firestore:rules,firestore:indexes --project ${PROJECT}"
