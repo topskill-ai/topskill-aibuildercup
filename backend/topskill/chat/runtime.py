@@ -106,12 +106,15 @@ ERROR_MESSAGES: dict[str, str] = {
 }
 
 
-def classify_outcome(*, abort_requested: bool, runner_finished: bool, answer_text: str) -> Outcome:
-    """``aborted`` iff the stop actually interrupted the runner; else ``failed`` iff no visible text
-    (with or without an exception); else ``ok`` (a counted round, possibly carrying an error)."""
+def classify_outcome(
+    *, abort_requested: bool, runner_finished: bool, answer_text: str, turn_error: str | None = None
+) -> Outcome:
+    """``aborted`` iff the stop actually interrupted the runner; else ``failed`` iff the run ended
+    with an error (timeout, model/tool failure, error event) or produced no visible text; else
+    ``ok`` (a counted round). A partial answer cut short by an error is never charged."""
     if abort_requested and not runner_finished:
         return "aborted"
-    if answer_text.strip() == "":
+    if turn_error is not None or answer_text.strip() == "":
         return "failed"
     return "ok"
 
@@ -482,6 +485,7 @@ async def run_turn(ctx: TurnContext, emit: Emit) -> None:
             abort_requested=ctx.abort.is_set(),
             runner_finished=attempt.runner_finished,
             answer_text=state.answer_text,
+            turn_error=turn_error,
         )
         for frame in state.close_unfinished(interrupted=outcome == "aborted"):
             emit(frame)

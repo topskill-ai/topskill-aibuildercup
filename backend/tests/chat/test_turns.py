@@ -212,7 +212,7 @@ async def test_safety_event_is_agent_run_failed(client, doubles) -> None:
     assert msgs[f"m_{frames[0][1]['request_id']}"].error_code == "agent_run_failed"
 
 
-async def test_error_after_visible_text_is_ok_with_error(client, doubles) -> None:
+async def test_error_after_visible_text_is_failed_and_not_charged(client, doubles) -> None:
     billing, _, _ = doubles
     _, visitor, agent = await setup_agent()
     fake_llm.queue_script([text("Partial answer"), error(503)])
@@ -220,7 +220,7 @@ async def test_error_after_visible_text_is_ok_with_error(client, doubles) -> Non
     frames, done = await chat_frames(client, agent, visitor)
     assert [n for n, _ in frames] == ["status", "text_delta", "error", "done"]
     assert frames[2][1]["code"] == "agent_run_failed"
-    assert done["outcome"] == "ok" and [s.succeeded for s in billing.settles] == [True]
+    assert done["outcome"] == "failed" and [s.succeeded for s in billing.settles] == [False]
     assert fake_llm.pending_scripts() == 1  # no fallback once output was produced
 
 
@@ -262,8 +262,8 @@ async def test_idle_timeout(client, doubles, monkeypatch) -> None:
         frames, done = await chat_frames(client, agent, visitor)
     assert [n for n, _ in frames] == ["status", "text_delta", "error", "done"]
     assert frames[2][1]["code"] == "turn_timeout"
-    assert done["outcome"] == "ok"  # visible text was produced before the timeout
-    assert billing.settles[0].succeeded is True
+    assert done["outcome"] == "failed"  # a partial answer cut short by a timeout is not charged
+    assert billing.settles[0].succeeded is False
 
 
 async def test_max_llm_calls(client, doubles, monkeypatch) -> None:

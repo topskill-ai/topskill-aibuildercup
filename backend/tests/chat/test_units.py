@@ -78,6 +78,23 @@ def test_classify_outcome(abort: bool, finished: bool, text: str, expected: str)
     assert classify_outcome(abort_requested=abort, runner_finished=finished, answer_text=text) == expected
 
 
+@pytest.mark.parametrize("error", ["turn_timeout", "agent_run_failed", "rate_limited", "internal_error"])
+def test_partial_answer_cut_short_by_error_is_failed(error: str) -> None:
+    assert (
+        classify_outcome(
+            abort_requested=False, runner_finished=True, answer_text="partial answer", turn_error=error
+        )
+        == "failed"
+    )
+    # a stop that really interrupted the run still wins over the error
+    assert (
+        classify_outcome(
+            abort_requested=True, runner_finished=False, answer_text="partial answer", turn_error=error
+        )
+        == "aborted"
+    )
+
+
 # --------------------------------------------------------------------------- tool naming
 
 
