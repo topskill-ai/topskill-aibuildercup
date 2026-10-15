@@ -38,10 +38,13 @@ MAX_FILES_PER_AGENT = 20
 MAX_FILES_PER_REQUEST = 3
 MAX_FILENAME_CHARS = 120
 STALE_PROCESSING_SECONDS = 10 * 60
+LOCAL_STORE = "local"  # the local backend needs no real store; never written to knowledge_store
 
 STALE_ERROR = "Processing was interrupted. Please re-upload."
 UNREADABLE_ERROR = "No readable text was found in this file."
 UNPARSEABLE_ERROR = "This file could not be read. Please check that it is a valid document."
+TOO_LARGE_ERROR = "This file is too large to index."
+DELETE_ERROR = "Deleting failed. Please try again."
 INDEX_ERROR = "Indexing failed. Please try again later or re-upload the file."
 NOT_CONFIGURED_ERROR = "Document indexing is not configured on this server."
 
@@ -115,6 +118,7 @@ class IndexingError(Exception):
 
 class KnowledgeBackend(Protocol):
     name: BackendName
+    needs_store: bool  # True when the backend keeps a real store claimed in ``knowledge_store``
 
     def owns(self, store: str | None) -> bool:
         """True when ``store`` (``agents/{id}.knowledge_store``) was created by this backend."""
