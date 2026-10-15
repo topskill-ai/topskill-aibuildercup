@@ -72,6 +72,7 @@ class AgentStats(BaseModel):
     a2a_gross_cents: int
     records: int
     last_activity_at: str | None
+    guard: dict[str, int] = {}  # P2 guard (SPEC §18 "Guard"): TS GuardStats
 
 
 class AgentSummary(BaseModel):

@@ -28,6 +28,7 @@ from topskill.config import get_settings
 from topskill.db import Col, get_db, utcnow
 from topskill.domain import AgentDoc, iso_z
 from topskill.errors import ApiError, Codes
+from topskill.guard import guard_stats_wire
 from topskill.pagination import fetch_page
 
 RECENT_INCOME_LIMIT = 20
@@ -59,6 +60,7 @@ def stats_wire(data: dict[str, Any] | None) -> dict[str, Any]:
     out: dict[str, Any] = {key: int(data.get(key) or 0) for key in STATS_FIELDS}
     last = data.get("last_activity_at")
     out["last_activity_at"] = iso_z(last) if isinstance(last, datetime) else None
+    out["guard"] = guard_stats_wire(data)  # P2 guard (SPEC §18 "Guard")
     return out
 
 

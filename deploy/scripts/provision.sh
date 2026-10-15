@@ -153,4 +153,28 @@ if confirm "Grant deploy roles to ${BUILD_SA}?"; then
     --member="serviceAccount:${BUILD_SA}" --role=roles/iam.serviceAccountUser --format=none
 fi
 
+# ---- P2 guard: Model Armor (SPEC §18 "Guard")
+GUARD_LOCATION="${GUARD_LOCATION:-asia-southeast1}"
+GUARD_TEMPLATE="${GUARD_TEMPLATE:-topskill-public}"
+log "Model Armor template ${GUARD_TEMPLATE} (${GUARD_LOCATION})"
+run gcloud services enable modelarmor.googleapis.com --project "${PROJECT}"
+# gcloud must use the regional endpoint, otherwise it reports a misleading PERMISSION_DENIED.
+export CLOUDSDK_API_ENDPOINT_OVERRIDES_MODELARMOR="https://modelarmor.${GUARD_LOCATION}.rep.googleapis.com/"
+if gcloud model-armor templates describe "${GUARD_TEMPLATE}" --location "${GUARD_LOCATION}" --project "${PROJECT}" \
+  >/dev/null 2>&1; then
+  ok "exists"
+else
+  # Malicious URI filtering is not available in asia-southeast1 (CAPABILITY_NOT_SUPPORTED), so it is left out.
+  run gcloud model-armor templates create "${GUARD_TEMPLATE}" --location "${GUARD_LOCATION}" --project "${PROJECT}" \
+    --rai-settings-filters='[{"filterType":"HATE_SPEECH","confidenceLevel":"MEDIUM_AND_ABOVE"},{"filterType":"HARASSMENT","confidenceLevel":"MEDIUM_AND_ABOVE"},{"filterType":"SEXUALLY_EXPLICIT","confidenceLevel":"MEDIUM_AND_ABOVE"},{"filterType":"DANGEROUS","confidenceLevel":"MEDIUM_AND_ABOVE"}]' \
+    --pi-and-jailbreak-filter-settings-enforcement=enabled \
+    --pi-and-jailbreak-filter-settings-confidence-level=MEDIUM_AND_ABOVE \
+    --basic-config-filter-enforcement=enabled --labels=app=topskill
+fi
+unset CLOUDSDK_API_ENDPOINT_OVERRIDES_MODELARMOR
+# Apply this grant BEFORE deploying an image with GUARD_BACKEND=model_armor (SPEC §18 "Guard", ship order).
+if confirm "Grant roles/modelarmor.user to ${RUNTIME_SA}?"; then
+  bind_project "serviceAccount:${RUNTIME_SA}" roles/modelarmor.user
+fi
+
 log "Done. Next: firebase deploy --only firestore:rules,firestore:indexes --project ${PROJECT}"

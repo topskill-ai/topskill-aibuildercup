@@ -59,6 +59,7 @@ export const CALL_ERROR_TEXT: Record<string, string> = {
   agent_run_failed: "The agent failed to answer",
   validation_error: "The request was not valid",
   canceled: "The call was canceled",
+  blocked_by_policy: "Blocked by the agent's safety screening",
 };
 
 export function callErrorText(code: string | null | undefined): string {

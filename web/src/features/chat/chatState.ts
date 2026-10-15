@@ -3,7 +3,7 @@
  * Kept free of React so the streaming rules are unit-tested directly.
  */
 import { formatCredits } from "@/lib/money";
-import type { ChatMessage, ChatStreamEvent, Citation, StreamErrorData, ToolLine } from "@/api/types";
+import type { ChatMessage, ChatStreamEvent, Citation, GuardData, StreamErrorData, ToolLine } from "@/api/types";
 
 export interface ViewCharge {
   charged_cents: number;
@@ -28,6 +28,8 @@ export interface ViewMessage {
   error?: StreamErrorData | null;
   balance_cents?: number | null;
   free_rounds_left?: number | null;
+  /** P2 guard (SPEC §18 "Guard"): Model Armor blocked or redacted this message in this page view. */
+  guard?: GuardData | null;
 }
 
 export interface ChatState {
@@ -95,6 +97,17 @@ function updateModel(state: ChatState, turnId: string, fn: (m: ViewMessage) => V
   return changed ? { ...state, messages } : state;
 }
 
+function updateUser(state: ChatState, turnId: string, fn: (m: ViewMessage) => ViewMessage): ChatState {
+  const id = pendingUserId(turnId);
+  let changed = false;
+  const messages = state.messages.map((m) => {
+    if (m.id !== id && !(m.role === "user" && m.turn_id === turnId)) return m;
+    changed = true;
+    return fn(m);
+  });
+  return changed ? { ...state, messages } : state;
+}
+
 function closeRunningTools(tools: ToolLine[], status: ToolLine["status"]): ToolLine[] {
   return tools.some((t) => t.status === "running")
     ? tools.map((t) => (t.status === "running" ? { ...t, status } : t))
@@ -131,6 +144,11 @@ function applyEvent(state: ChatState, turnId: string, event: ChatStreamEvent): C
       }));
     case "error":
       return updateModel(state, turnId, (m) => ({ ...m, error: event.data }));
+    case "guard": {
+      const g = event.data;
+      if (g.target === "prompt") return updateUser(state, turnId, (m) => ({ ...m, text: g.text, guard: g }));
+      return updateModel(state, turnId, (m) => ({ ...m, text: g.text, guard: g }));
+    }
     case "done": {
       const d = event.data;
       const next = updateModel(state, turnId, (m) => ({

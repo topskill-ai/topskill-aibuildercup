@@ -110,6 +110,9 @@ class AgentConfig(BaseModel):  # runtime config; changes need a new version
     web_search_enabled: bool = True
     skill_ids: list[str] = Field(min_length=1, max_length=5)
     record_schema: RecordSchema | None = None
+    # P2 guard (SPEC §18 "Guard"): Model Armor screening. Applies live (read from the agent doc on every turn
+    # and call), so it is not part of AgentVersion and toggling it never sets config_dirty.
+    safety_screening: bool = True
 
 
 class AgentDoc(BaseModel):

@@ -30,7 +30,9 @@ export interface RecordField { key: string; label: string; type: FieldType; desc
   min: number | null; max: number | null }
 export interface RecordSchema { version: 1; scope: "session"; fields: RecordField[] }
 export interface AgentConfig { soul: string; model: string; temperature: number | null;
-  web_search_enabled: boolean; skill_ids: string[]; record_schema: RecordSchema | null }
+  web_search_enabled: boolean; skill_ids: string[]; record_schema: RecordSchema | null;
+  /** P2 guard (SPEC §18 "Guard"): Model Armor screening; applies live (not versioned). */
+  safety_screening: boolean }
 
 export interface SkillFile { path: string; size: number; mime: string; is_text: boolean }
 export interface Skill { id: string; slug: string; name: string; description: string;
@@ -38,7 +40,9 @@ export interface Skill { id: string; slug: string; name: string; description: st
 
 export interface AgentStats { rounds: number; paid_rounds: number; conversations: number;
   visitor_gross_cents: number; creator_earned_cents: number; a2a_calls: number;
-  a2a_gross_cents: number; records: number; last_activity_at: string | null }
+  a2a_gross_cents: number; records: number; last_activity_at: string | null;
+  /** P2 guard (SPEC §18 "Guard"); optional so older payloads still type-check. */
+  guard?: GuardStats }
 export interface AgentUrls { public_page: string; a2a_card: string; a2a_endpoint: string }
 export interface Agent { id: string; slug: string; status: "active" | "paused"; listed: boolean;
   title: string; tagline: string; description: string; avatar_id: string | null; avatar_url: string | null;
@@ -46,7 +50,9 @@ export interface Agent { id: string; slug: string; status: "active" | "paused"; 
   capabilities: Capability[]; accent_color: AccentColor; creator_name: string; creator_headline: string;
   pricing: Pricing; config: AgentConfig; config_dirty: boolean; active_version: number; version_count: number;
   skills: Skill[]; knowledge: { files: number; ready: number; processing: number; failed: number };
-  stats: AgentStats; urls: AgentUrls; created_at: string; updated_at: string }
+  stats: AgentStats; urls: AgentUrls; created_at: string; updated_at: string;
+  /** P2 guard (SPEC §18 "Guard"): screening is effectively running (flag on, deployment has it, healthy). */
+  guard_active?: boolean }
 export interface AgentSummary { id: string; slug: string; title: string; tagline: string;
   avatar_url: string | null; accent_color: AccentColor; status: "active" | "paused"; listed: boolean;
   pricing: Pricing; active_version: number; config_dirty: boolean; stats: AgentStats; updated_at: string }
@@ -63,7 +69,9 @@ export interface VersionSummary { n: number; created_at: string; note: string; m
 export interface PublicCreator { uid: string; name: string; headline: string }
 export interface PublicAgentCard { slug: string; title: string; tagline: string; avatar_url: string | null;
   accent_color: AccentColor; creator: PublicCreator; pricing: { mode: PricingMode; price_cents: number; free_rounds: number };
-  features: { knowledge: boolean; web_search: boolean; records: boolean; a2a: boolean };
+  features: { knowledge: boolean; web_search: boolean; records: boolean; a2a: boolean;
+    /** P2 guard (SPEC §18 "Guard"): "Protected by Model Armor" badge. */
+    safety_screening?: boolean };
   stats: { conversations: number; a2a_calls: number } }
 export interface PublicAgent extends PublicAgentCard { description: string; greeting: string;
   input_placeholder: string; starter_questions: StarterQuestion[]; capabilities: Capability[];
@@ -145,7 +153,8 @@ export type ChatStreamEvent =
   | { event: "tool_end"; data: ToolEndData }
   | { event: "citations"; data: CitationsData }
   | { event: "error"; data: StreamErrorData }
-  | { event: "done"; data: DoneData };
+  | { event: "done"; data: DoneData }
+  | { event: "guard"; data: GuardData };
 
 export interface DiscoveredAgent { slug: string; name: string; tagline: string; price_cents: number; card_url: string }
 export interface A2ADiscoverData { query: string; agents: DiscoveredAgent[] }
@@ -166,3 +175,11 @@ export type AssistantStreamEvent =
   | { event: "a2a_result"; data: A2AResultData }
   | { event: "error"; data: StreamErrorData }
   | { event: "done"; data: AssistantDoneData };
+
+// ---- P2 guard: Model Armor (SPEC §18 "Guard") ----
+export interface GuardStats { prompts_screened: number; prompts_blocked: number; prompts_redacted: number;
+  answers_screened: number; answers_blocked: number; answers_redacted: number; answers_flagged: number;
+  failed_open: number }
+/** SSE `guard`: the visitor message (`prompt`) or the final answer (`answer`) was blocked or redacted. */
+export interface GuardData { target: "prompt" | "answer"; action: "blocked" | "redacted"; categories: string[];
+  text: string }

@@ -22,6 +22,7 @@ import { AgentsTable } from "@/features/studio/AgentsTable";
 import { useDashboard } from "@/features/studio/api";
 import { IncomeList } from "@/features/studio/IncomeList";
 import { channelSplit, newEntryIds } from "@/features/studio/income";
+import { GuardSummaryCard } from "@/features/guard/GuardSummaryCard";
 
 const LIVE_KEY = "topskill.studio.live";
 
@@ -197,6 +198,8 @@ export default function StudioDashboardPage() {
           </div>
         </Card>
       </div>
+
+      {d && d.agents.length > 0 ? <GuardSummaryCard className="mt-6" agents={d.agents} /> : null}
     </PageBody>
   );
 }

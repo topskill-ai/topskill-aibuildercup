@@ -89,6 +89,8 @@ class Codes:
     CONNECTION_LOST = "connection_lost"
     NETWORK_ERROR = "network_error"
     CALL_LIMIT = "call_limit"
+    # P2 guard (SPEC §18 "Guard"): mid-stream SSE error, A2A JSON-RPC error data.code, a2a_result.error_code
+    BLOCKED_BY_POLICY = "blocked_by_policy"
 
 
 ERROR_CODES: frozenset[str] = frozenset(

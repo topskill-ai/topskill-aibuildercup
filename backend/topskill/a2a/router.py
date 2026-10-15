@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
-from topskill import repo, tasks
+from topskill import guard, repo, tasks
 from topskill.auth import CurrentUser, get_current_user
 from topskill.domain import AgentDoc
 from topskill.errors import ApiError, Codes, current_trace_id
@@ -135,6 +135,17 @@ async def _stack(slug: str, agent: AgentDoc) -> A2AStack:
         raise ApiError(503, Codes.SERVICE_UNAVAILABLE, "This agent is temporarily unavailable.") from exc
 
 
+async def settle_blocked(call_id: str) -> None:
+    """Settle a call blocked by the guard as failed (never charged)."""
+    try:
+        await settle_call(
+            call_id, succeeded=False, model=None, answer_preview="", error_code=Codes.BLOCKED_BY_POLICY
+        )
+    except Exception:
+        log.exception("a2a_blocked_settle_failed call_id=%s", call_id)
+        await settle_failed_if_running(call_id)
+
+
 class DirectoryResponse(BaseModel):
     items: list[DirectoryAgent]
 
@@ -198,16 +209,48 @@ async def a2a_rpc(slug: str, request: Request) -> Response:
     if not isinstance(message.get("parts"), list) or not message["parts"]:
         return rpc_error(rpc_id, -32602, 400, Codes.VALIDATION_ERROR, "Invalid params: message.parts.")
     _force_blocking(method, params)
+    # P2 guard (SPEC §18 "Guard"): screen every part of the caller's message during the preflight (redacted
+    # in place); never raises. A part that cannot be screened fails closed before anything is reserved. A
+    # blocked message is still reserved and then settled as failed, so the call shows up (not charged).
+    prompt_check = asyncio.ensure_future(
+        guard.screen_a2a_message(agent.id, agent.config.safety_screening, message)
+    )
     try:
         stack = await _stack(slug, agent)  # before reserving: a build failure must not hold budget
         price = await _deps.billing().preflight_a2a(agent, mandate)
+        screen = await prompt_check  # before the preview is stored: it must already be redacted
+        if screen.invalid:
+            return rpc_error(
+                rpc_id,
+                -32602,
+                400,
+                Codes.VALIDATION_ERROR,
+                f"Invalid params: message.parts ({screen.invalid}; this agent screens messages and accepts "
+                "text, JSON data and text files only).",
+            )
+        verdict = screen.verdict
         call_id = await reserve_call(mandate, agent, message_id, request_preview(message), price)
     except ApiError as err:
+        prompt_check.cancel()
         return api_error_rpc(rpc_id, err)
     except Exception:  # nothing was reserved (T8 is all-or-nothing)
+        prompt_check.cancel()
         log.exception("a2a_preflight_failed slug=%s", slug)
         return rpc_error(
             rpc_id, -32001, 503, Codes.SERVICE_UNAVAILABLE, "This agent is temporarily unavailable."
+        )
+    if verdict.blocked:
+        await settle_blocked(call_id)
+        log.info(
+            "a2a_call_blocked slug=%s call_id=%s categories=%s", slug, call_id, ",".join(verdict.categories)
+        )
+        return rpc_error(
+            rpc_id,
+            -32001,
+            400,
+            Codes.BLOCKED_BY_POLICY,
+            "The message was blocked by the agent's safety screening. The call was not charged.",
+            {"categories": list(verdict.categories), "call_id": call_id},
         )
     request.state.a2a_call_id = call_id
     setattr(request.state, DEADLINE_STATE_KEY, deadline)

@@ -49,7 +49,7 @@ from google.cloud import firestore
 from google.genai import types
 from pydantic import BaseModel
 
-from topskill import tasks
+from topskill import guard, tasks
 from topskill.auth import CurrentUser
 from topskill.chat.agent_factory import (
     THINKING_LEVEL,
@@ -103,6 +103,7 @@ ERROR_MESSAGES: dict[str, str] = {
     Codes.RATE_LIMITED: "The model is busy right now. Please try again in a moment.",
     Codes.SERVICE_UNAVAILABLE: "Your message could not be saved. Please try again.",
     Codes.INTERNAL_ERROR: "Something went wrong. Please try again.",
+    Codes.BLOCKED_BY_POLICY: "Blocked by the agent's safety screening. You were not charged.",
 }
 
 
@@ -444,6 +445,14 @@ async def run_turn(ctx: TurnContext, emit: Emit) -> None:
         turn_error: str | None = None
         attempt = _Attempt(state=state)
         prep: _Prepared | None = None
+        # P2 guard (SPEC §18 "Guard"): screen the visitor message while the turn is prepared; never raises.
+        guard_ctx = guard.GuardContext(
+            agent_id=ctx.agent.id,
+            channel="web",
+            enabled=ctx.agent.config.safety_screening,
+            request_id=ctx.request_id,
+        )
+        prompt_check = asyncio.ensure_future(guard.sanitize_prompt(ctx.message, guard_ctx))
         try:
             prep = await _prepare(ctx, deps)
         except Exception as exc:
@@ -451,6 +460,13 @@ async def run_turn(ctx: TurnContext, emit: Emit) -> None:
             turn_error = (
                 Codes.SERVICE_UNAVAILABLE if isinstance(exc, gexc.GoogleAPIError) else Codes.INTERNAL_ERROR
             )
+            attempt.runner_finished = True
+        prompt_verdict = await prompt_check
+        if prompt_verdict.action != "allow":
+            ctx.message = prompt_verdict.text  # stored (and sent to the model) without the sensitive spans
+            emit(guard.guard_frame("prompt", prompt_verdict))
+        if prompt_verdict.blocked:
+            turn_error, prep = Codes.BLOCKED_BY_POLICY, None
             attempt.runner_finished = True
         if prep is not None:
             models = chat_models(ctx.version)
@@ -480,6 +496,28 @@ async def run_turn(ctx: TurnContext, emit: Emit) -> None:
                     state.error_code,
                     (state.error_message or "")[:300],
                 )
+
+        answer_verdict: guard.GuardVerdict | None = None
+        if state.answer_text.strip():
+            # P2 guard (SPEC §18 "Guard"): screen whatever answer text will be stored, whatever the outcome
+            # (a partial answer of a stopped or failed turn is stored too), before settlement.
+            would_be_ok = (
+                classify_outcome(
+                    abort_requested=ctx.abort.is_set(),
+                    runner_finished=attempt.runner_finished,
+                    answer_text=state.answer_text,
+                    turn_error=turn_error,
+                )
+                == "ok"
+            )
+            answer_verdict = await guard.sanitize_response(state.answer_text, guard_ctx)
+            if answer_verdict.action != "allow":
+                # Emitting is safe after a disconnect (the queue is simply not drained); after Stop the
+                # client still replaces the partial answer on screen.
+                emit(guard.guard_frame("answer", answer_verdict))
+                state.answer_parts = [] if answer_verdict.blocked else [answer_verdict.text]
+            if answer_verdict.blocked and would_be_ok:  # failed / aborted turns keep their own error
+                turn_error = Codes.BLOCKED_BY_POLICY
 
         outcome = classify_outcome(
             abort_requested=ctx.abort.is_set(),
@@ -516,6 +554,8 @@ async def run_turn(ctx: TurnContext, emit: Emit) -> None:
             )
         except Exception as exc:
             log.error("settlement_failed %s error=%r", log_extra, exc, exc_info=True)
+
+        guard.record_stats(ctx.agent.id, [("prompt", prompt_verdict), ("response", answer_verdict)])
 
         error_code = Codes.SERVICE_UNAVAILABLE if charge is None else turn_error
         if error_code:

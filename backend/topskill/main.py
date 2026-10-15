@@ -30,6 +30,7 @@ from topskill.errors import (
     configure_logging,
     install_error_handlers,
 )
+from topskill.guard import warm_up as guard_warm_up
 from topskill.knowledge import sweep_stale_all
 from topskill.knowledge.router import router as knowledge_router
 from topskill.meta_router import router as meta_router
@@ -75,6 +76,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     init_firebase()
     tasks.spawn(_warm_import_adk(), name="warm-import:google.adk")
     tasks.spawn(sweep_stale_all(), name="knowledge:startup-sweep")  # never raises (SPEC §10.1)
+    tasks.spawn(guard_warm_up(), name="guard:warm-up")  # P2 guard (SPEC §18 "Guard"); never raises
     log.info("startup env=%s version=%s routers=%s", settings.env, settings.app_version, mounted_routers(app))
     try:
         yield

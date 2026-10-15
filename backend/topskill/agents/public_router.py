@@ -19,6 +19,7 @@ from topskill.agents.schemas import (
 from topskill.agents.service import get_stats
 from topskill.db import Col, get_db
 from topskill.domain import AgentDoc, AgentVersion
+from topskill.guard import protection_shown
 from topskill.pagination import decode_cursor, encode_cursor
 from topskill.repo import get_public_agent
 
@@ -95,6 +96,7 @@ def card_to_wire(agent: AgentDoc, version: AgentVersion | None, stats: dict, has
             "web_search": web,
             "records": records,
             "a2a": agent.pricing.a2a_enabled,
+            "safety_screening": protection_shown(agent.config.safety_screening),  # P2 guard
         },
         "stats": {
             "conversations": int(stats.get("conversations") or 0),
