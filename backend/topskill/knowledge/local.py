@@ -19,10 +19,9 @@ from google.cloud.firestore_v1.base_query import FieldFilter
 
 from topskill.db import Col, get_db
 from topskill.domain import Passage
-from topskill.knowledge.base import BackendName, ExtractedText, IngestResult, KnowledgeFileDoc
+from topskill.knowledge.base import LOCAL_STORE, BackendName, ExtractedText, IngestResult, KnowledgeFileDoc
 from topskill.knowledge.extract import split_sections
 
-LOCAL_STORE = "local"
 CHUNK_CHARS = 1200
 MAX_TERMS_PER_CHUNK = 300
 CACHE_TTL_S = 60.0
@@ -124,6 +123,7 @@ class _CacheEntry:
 
 class LocalBackend:
     name: BackendName = "local"
+    needs_store = False
 
     def __init__(self) -> None:
         self._cache: dict[str, _CacheEntry] = {}

@@ -3,13 +3,15 @@
 Rules implemented here:
 
 * ``ensure_store`` is race-free: an in-process ``asyncio.Lock`` per agent, then transaction T9 writes
-  ``agents/{id}.knowledge_store`` only while it is still unset; a store created by a losing writer is
-  deleted again.
+  ``agents/{id}.knowledge_store`` only while it is still unset (write-once); a store created by a losing
+  writer is deleted again. Only File Search claims a store; the local backend writes nothing.
 * Every file status change (→ ready / failed / unreadable) and every deletion bumps
   ``agents/{id}.knowledge_rev`` in the same batch as the file write (never touches ``updated_at``).
 * Ingestion runs in the background via ``tasks.spawn`` and never raises.
 * Files left ``processing`` for more than 10 minutes (e.g. after a revision rollout) are marked failed
-  before every listing, so polling always terminates.
+  before every listing and every ``counts`` call (and once at startup), so polling always terminates.
+* Deleting never drops the index reference on failure: the file doc stays (``failed``) and the call
+  answers 503 so the creator can retry.
 * Knowledge applies live: search covers every ``ready`` file of the agent indexed by the active backend.
 """
 
@@ -33,13 +35,14 @@ from topskill.db import Col, get_db, new_id, utcnow
 from topskill.domain import AgentDoc, Passage
 from topskill.errors import ApiError, Codes
 from topskill.knowledge.base import (
+    DELETE_ERROR,
     INDEX_ERROR,
+    LOCAL_STORE,
     MAX_FILE_BYTES,
     MAX_FILES_PER_AGENT,
     MAX_FILES_PER_REQUEST,
     STALE_ERROR,
     STALE_PROCESSING_SECONDS,
-    UNPARSEABLE_ERROR,
     UNREADABLE_ERROR,
     BackendName,
     IndexingError,
@@ -55,6 +58,7 @@ log = logging.getLogger(__name__)
 
 FILE_ID_RE = re.compile(r"^kf_[0-9a-f]{20}$")
 MAX_QUERY_CHARS = 500
+MAX_BACKEND_TOP_K = 20
 MAX_CONCURRENT_INGESTIONS = 3
 READY_CACHE_TTL_S = 60.0
 MISSING_UPLOAD_ERROR = "The uploaded file is missing. Please re-upload."
@@ -159,8 +163,22 @@ async def _set_status(agent_id: str, file_id: str, fields: dict[str, Any]) -> bo
 # --------------------------------------------------------------------------- store claim (T9)
 
 
-async def _claim_store(agent_id: str, store: str, backend: KnowledgeBackend) -> str:
-    """Transaction T9: set ``knowledge_store`` only while it is unset (or not this backend's); → winner."""
+def _real_store(value: Any) -> str | None:
+    """``knowledge_store`` as a real store name; ``"local"`` (written by older builds) counts as unset."""
+    return value if isinstance(value, str) and value and value != LOCAL_STORE else None
+
+
+def active_store(backend: KnowledgeBackend, knowledge_store: Any) -> str | None:
+    """The store the active backend reads from: ``"local"`` for the local backend (it needs no real
+    store), else the claimed store when this backend owns it."""
+    if not backend.needs_store:
+        return LOCAL_STORE
+    current = _real_store(knowledge_store)
+    return current if current and backend.owns(current) else None
+
+
+async def _claim_store(agent_id: str, store: str) -> str:
+    """Transaction T9: set ``knowledge_store`` only while it is still unset; → the winner (write-once)."""
     db = get_db()
     ref = _agent_ref(agent_id)
 
@@ -169,8 +187,8 @@ async def _claim_store(agent_id: str, store: str, backend: KnowledgeBackend) -> 
         snap = await ref.get(transaction=tx)
         if not snap.exists:
             raise ApiError(404, Codes.AGENT_NOT_FOUND, "This agent does not exist.")
-        current = (snap.to_dict() or {}).get("knowledge_store")
-        if current and backend.owns(current):
+        current = _real_store((snap.to_dict() or {}).get("knowledge_store"))
+        if current:
             return current
         tx.update(ref, {"knowledge_store": store})
         return store
@@ -179,24 +197,35 @@ async def _claim_store(agent_id: str, store: str, backend: KnowledgeBackend) -> 
 
 
 async def ensure_store(agent_id: str) -> str:
-    """The agent's store name, created once (per-agent lock + T9; a losing store is deleted)."""
+    """The active backend's store for the agent, created once (per-agent lock + T9; losing store deleted).
+
+    ``agents/{id}.knowledge_store`` is write-once (SPEC §5.1): only a backend that needs a real store
+    (File Search) claims it, and only while it is unset. The local backend needs none and writes nothing,
+    so falling back to local and back again keeps the File Search store and its documents.
+    """
     backend = get_backend()
+    if not backend.needs_store:
+        return LOCAL_STORE
     async with _lock(_store_locks, agent_id):
         snap = await _agent_ref(agent_id).get()
         if not snap.exists:
             raise ApiError(404, Codes.AGENT_NOT_FOUND, "This agent does not exist.")
-        current = (snap.to_dict() or {}).get("knowledge_store")
-        if current and backend.owns(current):
-            return current
+        current = _real_store((snap.to_dict() or {}).get("knowledge_store"))
+        if current:
+            if backend.owns(current):
+                return current
+            raise IndexingError(f"knowledge_store {current!r} is not a {backend.name} store")
         created = await backend.create_store(agent_id)
         try:
-            winner = await _claim_store(agent_id, created, backend)
+            winner = await _claim_store(agent_id, created)
         except BaseException:
             await _discard_store(backend, created)
             raise
         if winner != created:
             log.info("knowledge_store_lost_race agent_id=%s winner=%s", agent_id, winner)
             await _discard_store(backend, created)
+            if not backend.owns(winner):
+                raise IndexingError(f"knowledge_store {winner!r} is not a {backend.name} store")
         return winner
 
 
@@ -315,7 +344,7 @@ async def _ingest(agent_id: str, file_id: str) -> None:
         text = await asyncio.to_thread(extract_text, data, doc.mime)
     except UnparseableFile as exc:
         log.info("knowledge_unparseable file_id=%s reason=%s", file_id, exc)
-        await _set_status(agent_id, file_id, {"status": "unreadable", "error": UNPARSEABLE_ERROR})
+        await _set_status(agent_id, file_id, {"status": "unreadable", "error": exc.user_message})
         return
     if not text.has_text:
         await _set_status(
@@ -326,17 +355,18 @@ async def _ingest(agent_id: str, file_id: str) -> None:
         return
 
     backend = get_backend()
+    store: str | None = None
     try:
         store = await ensure_store(agent_id)
         result = await backend.ingest(agent_id, store, doc, data, text)
     except IndexingError as exc:
         log.warning("knowledge_ingest_failed file_id=%s backend=%s error=%s", file_id, backend.name, exc)
-        await _cleanup_index(backend, agent_id, None, doc)
+        await _cleanup_index(backend, agent_id, store, doc)
         await _set_status(agent_id, file_id, {"status": "failed", "error": exc.user_message})
         return
     except Exception:
         log.exception("knowledge_ingest_error file_id=%s backend=%s", file_id, backend.name)
-        await _cleanup_index(backend, agent_id, None, doc)
+        await _cleanup_index(backend, agent_id, store, doc)
         await _set_status(agent_id, file_id, {"status": "failed", "error": INDEX_ERROR})
         return
 
@@ -429,7 +459,15 @@ async def sweep_stale_all() -> int:
 
 
 async def counts(agent_id: str) -> dict[str, int]:
-    """``{files, ready, processing, failed}`` for ``Agent.knowledge`` (unreadable counts as failed)."""
+    """``{files, ready, processing, failed}`` for ``Agent.knowledge`` (unreadable counts as failed).
+
+    Stale ``processing`` files are swept first, so the Overview badge ends even when nobody opens the
+    Knowledge tab and the startup sweep did not run.
+    """
+    try:
+        await sweep_stale(agent_id)
+    except Exception:
+        log.warning("knowledge_counts_sweep_failed agent_id=%s", agent_id, exc_info=True)
     files = await _all_files(agent_id)
     return {
         "files": len(files),
@@ -443,24 +481,59 @@ async def counts(agent_id: str) -> dict[str, int]:
 
 
 async def delete_file(agent_id: str, file_id: str) -> None:
-    """Remove a file from the index, storage and Firestore; bumps ``knowledge_rev``. 404 when missing."""
-    doc = await get_file(agent_id, file_id)
-    if doc is None:
-        raise _not_found()
-    agent_snap = await _agent_ref(agent_id).get()
-    store = (agent_snap.to_dict() or {}).get("knowledge_store") if agent_snap.exists else None
-    await _cleanup_index(backend_for(doc.backend), agent_id, store, doc)
+    """Remove a file from the index, storage and Firestore; bumps ``knowledge_rev``. 404 when missing.
+
+    The index is cleaned first and a failure there keeps the file doc (status ``failed``, so it leaves
+    search, and its ``fs_document_name`` survives for the retry) and answers 503. The doc is then deleted
+    in a transaction only if it did not change since the cleanup (ingestion may have just finished and
+    recorded a new document); otherwise the cleanup runs again on the fresh doc.
+    """
+    for _attempt in range(3):
+        doc = await get_file(agent_id, file_id)
+        if doc is None:
+            raise _not_found()
+        agent_snap = await _agent_ref(agent_id).get()
+        store = (agent_snap.to_dict() or {}).get("knowledge_store") if agent_snap.exists else None
+        try:
+            await backend_for(doc.backend).delete(agent_id, _real_store(store), doc)
+        except Exception as exc:
+            log.warning("knowledge_index_delete_failed file_id=%s", file_id, exc_info=True)
+            if doc.status != "failed" or doc.error != DELETE_ERROR:
+                await _set_status(agent_id, file_id, {"status": "failed", "error": DELETE_ERROR})
+            raise ApiError(
+                503, Codes.SERVICE_UNAVAILABLE, "Deleting the file failed. Please try again."
+            ) from exc
+        if await _delete_doc_if_unchanged(agent_id, doc):
+            break
+        log.info("knowledge_delete_retry agent_id=%s file_id=%s", agent_id, file_id)
+    else:
+        raise ApiError(503, Codes.SERVICE_UNAVAILABLE, "Deleting the file failed. Please try again.")
+    _ready_cache.pop(agent_id, None)
     try:
         await get_blob_store().delete_prefix(f"knowledge/{agent_id}/{file_id}/")
     except Exception:
         log.warning("knowledge_blob_delete_failed file_id=%s", file_id, exc_info=True)
-    db = get_db()
-    batch = db.batch()
-    batch.delete(_files_col(agent_id).document(file_id))
-    batch.update(_agent_ref(agent_id), {"knowledge_rev": firestore.Increment(1)})
-    await batch.commit()
-    _ready_cache.pop(agent_id, None)
     log.info("knowledge_deleted agent_id=%s file_id=%s", agent_id, file_id)
+
+
+async def _delete_doc_if_unchanged(agent_id: str, seen: KnowledgeFileDoc) -> bool:
+    """Delete the file doc and bump ``knowledge_rev`` unless it changed after ``seen`` was read."""
+    db = get_db()
+    file_ref = _files_col(agent_id).document(seen.file_id)
+
+    @firestore.async_transactional
+    async def _delete(tx: Any) -> bool:
+        snap = await file_ref.get(transaction=tx)
+        if not snap.exists:
+            return True
+        current = KnowledgeFileDoc.model_validate(snap.to_dict())
+        if current.updated_at != seen.updated_at or current.fs_document_name != seen.fs_document_name:
+            return False
+        tx.delete(file_ref)
+        tx.update(_agent_ref(agent_id), {"knowledge_rev": firestore.Increment(1)})
+        return True
+
+    return await _delete(db.transaction(max_attempts=5))
 
 
 # --------------------------------------------------------------------------- search
@@ -512,14 +585,16 @@ async def search(agent_id: str, query: str, top_k: int | None = None) -> list[Pa
         return []
     data = snap.to_dict() or {}
     rev = int(data.get("knowledge_rev") or 0)
-    store = data.get("knowledge_store")
     backend = get_backend()
-    if not store or not backend.owns(store):
+    store = active_store(backend, data.get("knowledge_store"))
+    if not store:
         return []
     ready = await _ready_files(agent_id, rev)
     if not ready:
         return []
-    passages = await backend.search(agent_id, store, query, k, rev=rev)
+    # Over-fetch: the index may hold chunks of files that are not ready (or leftovers of deleted ones);
+    # they are dropped below and must not take the slots of real passages.
+    passages = await backend.search(agent_id, store, query, min(k * 3, MAX_BACKEND_TOP_K), rev=rev)
     results: list[Passage] = []
     for p in passages:
         doc = ready.get(p.file_id)

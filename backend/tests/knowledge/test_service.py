@@ -13,6 +13,7 @@ from topskill.domain import Passage
 from topskill.errors import ApiError
 from topskill.knowledge import service
 from topskill.knowledge.base import (
+    DELETE_ERROR,
     STALE_ERROR,
     UNPARSEABLE_ERROR,
     UNREADABLE_ERROR,
@@ -74,7 +75,8 @@ async def test_upload_ingest_list_search_delete(client, dev_auth) -> None:
     doc = await _wait(agent.id, file_id)
     assert doc.status == "ready" and doc.pages == 3 and doc.backend == "local" and doc.chunks == 3
     stored = await get_agent(agent.id)
-    assert stored is not None and stored.knowledge_store == "local" and stored.knowledge_rev == 1
+    # the local backend needs no store: knowledge_store stays unset (write-once, File Search only)
+    assert stored is not None and stored.knowledge_store is None and stored.knowledge_rev == 1
 
     listing = (await client.get(f"/api/agents/{agent.id}/knowledge", headers=headers)).json()
     assert listing["backend"] == "local"
@@ -192,10 +194,12 @@ async def test_delete_while_processing_drops_indexed_data(monkeypatch) -> None:
     _owner, agent = await _owner_agent()
     local = service.backend_for("local")
     gate = asyncio.Event()
+    entered = asyncio.Event()
     cleaned: list[str | None] = []
     real_delete = local.delete
 
     async def slow_ingest(agent_id, store, file, data, text):
+        entered.set()
         await gate.wait()
         return IngestResult(pages=None, chunks=0)
 
@@ -206,10 +210,7 @@ async def test_delete_while_processing_drops_indexed_data(monkeypatch) -> None:
     monkeypatch.setattr(local, "ingest", slow_ingest)
     monkeypatch.setattr(local, "delete", tracking_delete)
     [doc] = await service.add_files(agent, [service.Upload("a.txt", b"hello world")])
-    for _ in range(50):  # wait until the task reached the backend
-        await asyncio.sleep(0.05)
-        if (await get_agent(agent.id)).knowledge_store:  # type: ignore[union-attr]
-            break
+    await asyncio.wait_for(entered.wait(), 5)  # the task reached the backend
     await service.delete_file(agent.id, doc.file_id)
     gate.set()
     for _ in range(50):
@@ -357,6 +358,8 @@ async def test_search_drops_passages_of_files_that_are_not_ready() -> None:
     service.backend_for("local")._cache.clear()  # type: ignore[attr-defined]
     passages = await service.search(agent.id, "zebra")
     assert [p.file_id for p in passages] == [doc.file_id]
+    # the ghost chunk scores higher; it must not take the only slot (the backend is asked for more)
+    assert [p.file_id for p in await service.search(agent.id, "zebra", top_k=1)] == [doc.file_id]
     assert await service.search(agent.id, "   ") == []
     assert await service.search("agt_" + "0" * 20, "zebra") == []
 
@@ -365,6 +368,7 @@ class CountingBackend:
     """A backend whose store creation is slow, to provoke races."""
 
     name = "local"
+    needs_store = True
 
     def __init__(self) -> None:
         self.created: list[str] = []
@@ -429,3 +433,105 @@ async def test_upload_starts_one_task_per_file(client, dev_auth) -> None:
     assert await _rev(agent.id) == 3
     counts = await service.counts(agent.id)
     assert counts == {"files": 3, "ready": 3, "processing": 0, "failed": 0}
+
+
+async def test_store_is_write_once_across_backend_fallback(client, dev_auth) -> None:
+    """A File Search store survives a fallback to local and back: local never writes knowledge_store."""
+    owner, agent = await _owner_agent()
+    fs_store = "fileSearchStores/topskill-keep-me"
+    await get_db().collection(Col.AGENTS).document(agent.id).update({"knowledge_store": fs_store})
+    resp = await _upload(client, dev_auth, owner, agent, "visa_guide.pdf", make_pdf())
+    doc = await _wait(agent.id, resp.json()["items"][0]["file_id"])
+    assert doc.status == "ready" and doc.backend == "local"
+    stored = await get_agent(agent.id)
+    assert stored is not None and stored.knowledge_store == fs_store
+    assert await service.ensure_store(agent.id) == "local"
+    hits = await service.search(agent.id, "refund policy")
+    assert hits and hits[0].file_id == doc.file_id  # local search does not need the stored name
+
+
+async def test_file_search_claims_over_legacy_local_value(monkeypatch) -> None:
+    _owner, agent = await _owner_agent()
+    await get_db().collection(Col.AGENTS).document(agent.id).update({"knowledge_store": "local"})
+    backend = CountingBackend()
+    monkeypatch.setattr(service, "get_backend", lambda: backend)
+    name = await service.ensure_store(agent.id)
+    assert name == backend.created[0]
+    stored = await get_agent(agent.id)
+    assert stored is not None and stored.knowledge_store == name
+    # once claimed it is never replaced
+    assert await service._claim_store(agent.id, "fake/other") == name
+
+
+async def test_delete_failure_keeps_the_doc_and_answers_503(client, dev_auth, monkeypatch) -> None:
+    owner, agent = await _owner_agent()
+    headers = dev_auth(owner.uid, "creator")
+    [doc] = await service.add_files(agent, [service.Upload("a.txt", b"zebra crossing rules")])
+    assert (await _wait(agent.id, doc.file_id)).status == "ready"
+    local = service.backend_for("local")
+    real_delete = local.delete
+    calls: list[str] = []
+
+    async def flaky_delete(agent_id, store, file):
+        calls.append(file.file_id)
+        if len(calls) == 1:
+            raise RuntimeError("503 from the index")
+        await real_delete(agent_id, store, file)
+
+    monkeypatch.setattr(local, "delete", flaky_delete)
+    rev = await _rev(agent.id)
+    resp = await client.delete(f"/api/agents/{agent.id}/knowledge/{doc.file_id}", headers=headers)
+    assert resp.status_code == 503 and resp.json()["code"] == "service_unavailable"
+    kept = await service.get_file(agent.id, doc.file_id)
+    assert kept is not None and (kept.status, kept.error) == ("failed", DELETE_ERROR)
+    assert await _rev(agent.id) == rev + 1
+    assert await service.search(agent.id, "zebra") == []  # no longer ready → out of search
+    resp = await client.delete(f"/api/agents/{agent.id}/knowledge/{doc.file_id}", headers=headers)
+    assert resp.status_code == 200
+    assert await service.get_file(agent.id, doc.file_id) is None and calls == [doc.file_id] * 2
+    chunks = get_db().collection(Col.AGENTS).document(agent.id).collection(Col.KNOWLEDGE_CHUNKS)
+    assert [s async for s in chunks.stream()] == []
+
+
+async def test_delete_redoes_cleanup_when_ingestion_finishes_meanwhile(monkeypatch) -> None:
+    """Ingestion records its document between the cleanup and the doc delete: cleanup runs again."""
+    _owner, agent = await _owner_agent()
+    [doc] = await service.add_files(agent, [service.Upload("a.txt", b"zebra crossing rules")])
+    await _wait(agent.id, doc.file_id)
+    local = service.backend_for("local")
+    seen: list[str | None] = []
+
+    async def racing_delete(agent_id, store, file):
+        seen.append(file.fs_document_name)
+        if len(seen) == 1:  # ingestion commits right after our read of the doc
+            await service._set_status(agent_id, file.file_id, {"fs_document_name": "late/doc"})
+
+    monkeypatch.setattr(local, "delete", racing_delete)
+    await service.delete_file(agent.id, doc.file_id)
+    assert seen == [None, "late/doc"]
+    assert await service.get_file(agent.id, doc.file_id) is None
+
+
+async def test_counts_sweeps_stale_processing_files() -> None:
+    _owner, agent = await _owner_agent()
+    ts = utcnow() - timedelta(minutes=11)
+    file_id = new_id("kf")
+    await (
+        get_db()
+        .collection(Col.AGENTS)
+        .document(agent.id)
+        .collection(Col.KNOWLEDGE)
+        .document(file_id)
+        .set(
+            KnowledgeFileDoc(
+                file_id=file_id,
+                filename="s.pdf",
+                mime=PDF,
+                size=1,
+                gcs_path="x",
+                created_at=ts,
+                updated_at=ts,
+            ).model_dump(mode="python")
+        )
+    )
+    assert await service.counts(agent.id) == {"files": 1, "ready": 0, "processing": 0, "failed": 1}
