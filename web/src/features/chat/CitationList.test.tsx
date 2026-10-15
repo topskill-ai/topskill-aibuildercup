@@ -57,7 +57,7 @@ describe("SearchEntryPoint", () => {
     const iframe = screen.getByTitle("Google Search suggestions");
     expect(iframe.tagName).toBe("IFRAME");
     expect(iframe).toHaveAttribute("sandbox", "allow-popups allow-popups-to-escape-sandbox");
-    expect(iframe.getAttribute("srcdoc")).toBe(html);
+    expect(iframe.getAttribute("srcdoc")).toBe(`<base target="_blank">${html}`);
     expect(screen.getByText("Grounded with Google Search")).toBeInTheDocument();
     // Nothing from the HTML is injected into our own DOM.
     expect(container.querySelector("script")).toBeNull();

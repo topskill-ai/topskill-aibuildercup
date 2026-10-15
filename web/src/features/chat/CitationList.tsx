@@ -3,7 +3,7 @@ import type { Citation } from "@/api/types";
 import { citationLabel } from "@/components/Markdown";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { cn } from "@/lib/cn";
-import { citationDomId } from "./display";
+import { citationDomId, entryPointDocument } from "./display";
 
 function webDomain(c: Citation): string {
   if (c.domain) return c.domain;
@@ -114,8 +114,10 @@ export function CitationList({
 
 /**
  * Google Search suggestions (search entry point) shown under a grounded answer, as Google's
- * grounding display rules require (SPEC §7.3). The HTML is untrusted: it is rendered unmodified
- * in a sandboxed `srcdoc` iframe without scripts or same-origin access; links open in a new tab.
+ * grounding display rules require (SPEC §7.3). The HTML is untrusted: it is rendered in a
+ * sandboxed `srcdoc` iframe without scripts or same-origin access. Google's markup is kept as is;
+ * only a `<base target="_blank">` is prepended so its links open a new tab (the frame itself may
+ * not navigate, and google.com refuses to be framed anyway).
  */
 export function SearchEntryPoint({ html, className }: { html: string; className?: string }) {
   return (
@@ -126,7 +128,7 @@ export function SearchEntryPoint({ html, className }: { html: string; className?
       </div>
       <iframe
         title="Google Search suggestions"
-        srcDoc={html}
+        srcDoc={entryPointDocument(html)}
         sandbox="allow-popups allow-popups-to-escape-sandbox"
         referrerPolicy="no-referrer"
         loading="lazy"
