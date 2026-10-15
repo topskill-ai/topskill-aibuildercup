@@ -6,7 +6,7 @@ Built for the Google Cloud AI Builder Cup 2026 (theme: Future of Work & Enterpri
 
 - Web app: https://top-skill.web.app
 - API: https://topskill-api-920441209758.asia-southeast1.run.app (`/health`, Agent Cards at `/a2a/{slug}/.well-known/agent-card.json`)
-- Implementation spec: [`docs/SPEC.md`](docs/SPEC.md) · E2E checklist: [`docs/E2E.md`](docs/E2E.md) · Demo script: [`docs/DEMO.md`](docs/DEMO.md)
+- Implementation spec: [`docs/SPEC.md`](docs/SPEC.md) · E2E checklist: [`docs/E2E.md`](docs/E2E.md) · Demo script: [`docs/DEMO.md`](docs/DEMO.md) · Calling an agent over A2A: [`docs/A2A.md`](docs/A2A.md)
 
 ## What it does
 
@@ -61,6 +61,18 @@ flowchart LR
 - **Web grounding** = the built-in `google_search` tool.
 - **Billing** settles at the end of a turn in one Firestore transaction together with the persisted messages ("persisted ⇒ billed"); failed or interrupted turns are never charged.
 - **A2A** calls carry a platform-issued Ed25519 JWS mandate (per-call max, total budget, expiry); public keys at `/.well-known/jwks.json`.
+
+### Google AI in the code
+
+| Piece | What it does | Code |
+|---|---|---|
+| Gemini on Vertex AI (`gemini-3.8-flash`, fallbacks per call) | Chat turns, record extraction, the Enterprise Assistant | `backend/topskill/gemini.py`, `backend/topskill/config.py` |
+| Agent Development Kit | One `LlmAgent` per turn with function tools plus built-in `google_search`; ADK sessions for A2A | `backend/topskill/chat/agent_factory.py`, `backend/topskill/chat/runtime.py` |
+| Structured output (`gemini-3.1-pro-preview` for the pro draft) | Drafts the whole agent listing from a `SKILL.md` | `backend/topskill/agents/draft.py` |
+| Image generation (`gemini-3.1-flash-image`) | Agent avatars | `backend/topskill/agents/avatar.py` |
+| Gemini File Search | One store per agent; our `search_knowledge` tool keeps page-level citations | `backend/topskill/knowledge/file_search.py`, `backend/topskill/knowledge/tool.py` |
+| Google Search grounding | Web sources and the search entry point shown under answers | `backend/topskill/chat/agent_factory.py`, `backend/topskill/chat/events.py` |
+| A2A v1.0 (+ v0.3 compat) | Agent Cards, JSON-RPC endpoint, Ed25519 JWS intent mandates | `backend/topskill/a2a/` |
 
 ## Scaling
 
