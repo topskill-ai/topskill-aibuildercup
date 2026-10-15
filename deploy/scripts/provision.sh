@@ -153,4 +153,47 @@ if confirm "Grant deploy roles to ${BUILD_SA}?"; then
     --member="serviceAccount:${BUILD_SA}" --role=roles/iam.serviceAccountUser --format=none
 fi
 
+# ---- P2: Ask your data (SPEC 18 analytics) -------------------------------------------------------------
+ANALYTICS_DATASET="${ANALYTICS_DATASET:-topskill_analytics}"
+SCHEDULER_SA_NAME="${SCHEDULER_SA_NAME:-topskill-scheduler}"
+SCHEDULER_SA="${SCHEDULER_SA_NAME}@${PROJECT}.iam.gserviceaccount.com"
+API_BASE="${API_BASE:-https://topskill-api-920441209758.asia-southeast1.run.app}"
+
+log "Analytics: APIs and BigQuery dataset ${PROJECT}:${ANALYTICS_DATASET}"
+run gcloud services enable --project "${PROJECT}" bigquery.googleapis.com cloudscheduler.googleapis.com
+if bq show --project_id "${PROJECT}" --dataset "${PROJECT}:${ANALYTICS_DATASET}" >/dev/null 2>&1; then
+  ok "exists (tables are created by the app on its first sync)"
+else
+  run bq --location "${REGION}" mk --dataset --label app:topskill --label feature:analytics \
+    --description "TopSkill creator analytics (copied from Firestore by the analytics sync)" \
+    "${PROJECT}:${ANALYTICS_DATASET}"
+fi
+
+log "IAM: analytics (runtime SA runs queries and writes only this dataset)"
+if confirm "Grant BigQuery jobUser (project) and dataEditor (dataset ${ANALYTICS_DATASET}) to ${RUNTIME_SA}?"; then
+  bind_project "serviceAccount:${RUNTIME_SA}" roles/bigquery.jobUser
+  run bq add-iam-policy-binding --dataset --project_id "${PROJECT}" \
+    --member="serviceAccount:${RUNTIME_SA}" --role=roles/bigquery.dataEditor "${PROJECT}:${ANALYTICS_DATASET}"
+fi
+
+log "Analytics sync schedule (Cloud Scheduler → POST /api/internal/analytics/sync, OIDC as ${SCHEDULER_SA})"
+if gcloud iam service-accounts describe "${SCHEDULER_SA}" --project "${PROJECT}" >/dev/null 2>&1; then
+  ok "scheduler service account exists"
+else
+  run gcloud iam service-accounts create "${SCHEDULER_SA_NAME}" --project "${PROJECT}" \
+    --display-name "TopSkill Cloud Scheduler invoker (analytics sync)"
+  [[ "${DRY_RUN}" == 1 ]] || sleep 10
+fi
+# No IAM grant needed: the API is public and verifies the OIDC token itself (email must be listed in
+# ANALYTICS_SYNC_INVOKERS); the Cloud Scheduler service agent mints tokens for SAs in its own project.
+SYNC_JOB_ARGS=(--location "${REGION}" --project "${PROJECT}" --schedule "*/15 * * * *" --time-zone UTC
+  --uri "${API_BASE}/api/internal/analytics/sync" --http-method POST --attempt-deadline 300s
+  --oidc-service-account-email "${SCHEDULER_SA}" --oidc-token-audience "${API_BASE}")
+if gcloud scheduler jobs describe topskill-analytics-sync --location "${REGION}" --project "${PROJECT}" \
+  >/dev/null 2>&1; then
+  run gcloud scheduler jobs update http topskill-analytics-sync "${SYNC_JOB_ARGS[@]}"
+elif confirm "Create Cloud Scheduler job topskill-analytics-sync (every 15 min)?"; then
+  run gcloud scheduler jobs create http topskill-analytics-sync "${SYNC_JOB_ARGS[@]}"
+fi
+
 log "Done. Next: firebase deploy --only firestore:rules,firestore:indexes --project ${PROJECT}"

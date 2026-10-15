@@ -130,6 +130,25 @@ class Settings(BaseSettings):
     # ---- request limits
     max_request_bytes: int = Field(30 * 1024 * 1024, ge=1)
 
+    # ---- analytics: "Ask your data" over BigQuery (P2, SPEC §18). Off unless enabled; outside prod the
+    # prod dataset is refused (use topskill_analytics_dev).
+    analytics_enabled: bool = False
+    analytics_project: str = ""  # "" = GOOGLE_CLOUD_PROJECT
+    analytics_dataset: str = "topskill_analytics"
+    analytics_location: str = "asia-southeast1"
+    analytics_max_bytes: int = Field(100 * 1024 * 1024, ge=1)  # dry-run cap and maximum_bytes_billed
+    analytics_query_timeout_s: int = Field(20, ge=1, le=120)
+    analytics_max_rows: int = Field(200, ge=1, le=5000)
+    analytics_ask_per_hour: int = Field(30, ge=0)
+    analytics_sync_min_interval_s: int = Field(60, ge=0)
+    analytics_sync_wait_s: int = Field(20, ge=0, le=120)
+    analytics_sync_invokers: CsvList = Field(default_factory=list)  # OIDC emails allowed to call the sync
+    analytics_sync_audience: str = ""  # "" = PUBLIC_API_BASE
+    model_analytics: str = "gemini-3.8-flash"
+    model_analytics_fallback: str = "gemini-3-flash-preview"
+
+    _split_analytics_lists = field_validator("analytics_sync_invokers", mode="before")(_split_csv)
+
     _split_lists = field_validator("chat_model_allowlist", "cors_origins", mode="before")(_split_csv)
 
     @field_validator("public_api_base", "public_web_base")

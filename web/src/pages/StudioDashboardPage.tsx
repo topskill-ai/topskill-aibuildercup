@@ -18,6 +18,7 @@ import { Switch } from "@/components/ui/Switch";
 import { formatNumber } from "@/lib/format";
 import { safeLocal } from "@/lib/safeStorage";
 import { formatCredits } from "@/lib/money";
+import { AskDataCard } from "@/features/analytics/AskDataCard";
 import { AgentsTable } from "@/features/studio/AgentsTable";
 import { useDashboard } from "@/features/studio/api";
 import { IncomeList } from "@/features/studio/IncomeList";
@@ -132,6 +133,8 @@ export default function StudioDashboardPage() {
           className="col-span-2 lg:col-span-1"
         />
       </section>
+
+      <AskDataCard className="mt-6" />
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         <Card className="h-max">

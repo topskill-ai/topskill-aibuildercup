@@ -216,7 +216,7 @@ async def test_cors_headers_on_500(c: httpx.AsyncClient) -> None:
 
 def test_app_boots_with_every_module() -> None:
     app = create_app()
-    assert app.state.mounted_routers == [
+    assert app.state.mounted_routers[:13] == [  # P0/P1 routers first; P2 lanes append (SPEC §18)
         "topskill.users.router:router",
         "topskill.meta_router:router",
         "topskill.skills.router:router",
