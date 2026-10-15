@@ -130,12 +130,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void queryClient.prefetchQuery({ queryKey: queryKeys.wallet, queryFn: () => api.get<Wallet>("/api/wallet") });
   }, [queryClient]);
 
-  /** Load the profile for a freshly signed-in identity and warm the wallet (opens it server-side). */
+  /**
+   * Load the profile for a freshly signed-in identity and warm the wallet (opens it server-side).
+   * If the profile cannot be loaded the sign-in is rolled back, so the UI never shows a
+   * half-signed-in state; the caller surfaces the error (with its trace id).
+   */
   const loadProfile = useCallback(
     async (nextUid: string): Promise<Me> => {
-      const me = await queryClient.fetchQuery({ queryKey: meKey(nextUid), queryFn: fetchMe, staleTime: 0 });
-      prefetchWallet();
-      return me;
+      try {
+        const me = await queryClient.fetchQuery({ queryKey: meKey(nextUid), queryFn: fetchMe, staleTime: 0, retry: false });
+        prefetchWallet();
+        return me;
+      } catch (err) {
+        setDevUser(null);
+        await firebaseSignOut(getFirebaseAuth()).catch(() => undefined);
+        setIdentity(null);
+        queryClient.removeQueries({ queryKey: meKey(nextUid) });
+        throw err;
+      }
     },
     [queryClient, prefetchWallet],
   );
