@@ -392,6 +392,40 @@ class RouteNameMiddleware:
             name_span()
 
 
+def _route_details_at_start(scope: Mapping[str, Any]) -> str | None:
+    """Route template for the span name at span start, safe on FastAPI ≥ 0.141 (backport of the
+    ``_flatten_routes`` fix in opentelemetry-instrumentation-fastapi 0.66b1, which google-adk's
+    ``opentelemetry-sdk<=1.42.1`` pin keeps us from installing).
+
+    0.63b1 iterates ``app.routes`` and reads ``.path`` of a partially matching route; included routers
+    are ``_IncludedRouter`` nodes without ``path``, so every CORS preflight (``OPTIONS`` on a ``GET``
+    route) and every wrong-method call raised ``AttributeError`` → 500. Here the routes are flattened
+    into their route contexts first, and any failure just leaves the span named after the method
+    (:class:`RouteNameMiddleware` renames it after routing anyway)."""
+    try:
+        from fastapi.routing import iter_route_contexts
+        from starlette.routing import Match
+
+        route: str | None = None
+        for context in iter_route_contexts(scope["app"].routes):
+            match, _ = context.matches(scope)
+            if match == Match.FULL:
+                route = getattr(context, "path", None) or scope.get("path")
+                break
+            if match == Match.PARTIAL and route is None:
+                route = getattr(context, "path", None)
+        return route
+    except Exception:  # never fail a request because a span could not be named
+        return None
+
+
+def _patch_fastapi_route_details() -> None:
+    from opentelemetry.instrumentation import fastapi as otel_fastapi
+
+    if getattr(otel_fastapi, "_get_route_details", None) is not _route_details_at_start:
+        otel_fastapi._get_route_details = _route_details_at_start  # type: ignore[attr-defined]
+
+
 def instrument_app(app: Any, provider: TracerProvider) -> None:
     """FastAPI server spans (outermost middleware), without one span per ASGI send/receive (SSE)."""
     if id(app) in _instrumented_app_ids:
@@ -399,6 +433,7 @@ def instrument_app(app: Any, provider: TracerProvider) -> None:
     try:
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
+        _patch_fastapi_route_details()
         app.add_middleware(RouteNameMiddleware)
 
         FastAPIInstrumentor.instrument_app(
