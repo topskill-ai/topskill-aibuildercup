@@ -61,12 +61,26 @@ export function A2ACallList({ mandateId, refetchInterval }: { mandateId: string;
     if (isMissingEndpoint(calls.error)) return null;
     return <ErrorLine error={calls.error} onRetry={() => void calls.refetch()} className="py-2" />;
   }
-  if (calls.data.items.length === 0) return <p className="py-2 text-[13px] text-subtle">No calls yet.</p>;
+  const note = (
+    <p className="py-2 text-2xs text-subtle">
+      Calls stopped by the assistant's pre-flight check never reach the agent, cost nothing and are not listed here.
+    </p>
+  );
+  if (calls.data.items.length === 0)
+    return (
+      <>
+        <p className="py-2 text-[13px] text-subtle">No calls yet.</p>
+        {note}
+      </>
+    );
   return (
-    <ul aria-label="A2A calls" className="divide-y divide-border">
-      {calls.data.items.map((c) => (
-        <A2ACallRow key={c.id} call={c} />
-      ))}
-    </ul>
+    <>
+      <ul aria-label="A2A calls" className="divide-y divide-border">
+        {calls.data.items.map((c) => (
+          <A2ACallRow key={c.id} call={c} />
+        ))}
+      </ul>
+      {note}
+    </>
   );
 }
