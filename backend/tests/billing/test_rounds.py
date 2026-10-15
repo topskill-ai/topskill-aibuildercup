@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from tests.billing.helpers import balance, doc, ledger, new_request_id, settle, stats
+from tests.billing.helpers import Writer, balance, doc, ledger, new_request_id, settle, stats
 from topskill import billing
 from topskill.db import Col, get_db, new_id
 from topskill.errors import ApiError
@@ -262,22 +262,37 @@ async def test_owner_wallet_created_inside_settlement_as_last_resort() -> None:
 
 
 async def test_transaction_failure_persists_nothing() -> None:
-    _owner, visitor, agent = await _setup(pricing={"free_rounds": 0})
-    await billing.get_or_open_wallet(visitor.uid)
+    """§8.5: if the transaction fails at commit, nothing is persisted — including the queued messages."""
+    owner, visitor, agent = await _setup(pricing={"free_rounds": 0})
+    owner_before = await balance(owner.uid)
+    stats_before = await stats(agent.id)
     cid = new_id("cnv")
+    rid = new_request_id()
+    # A pre-existing ledger row makes the visitor_payment ``tx.create`` fail with AlreadyExists at commit,
+    # after the writer has queued its messages + conversation and billing its wallet/usage/stats writes.
+    clash = get_db().collection(Col.LEDGER).document(f"{visitor.uid}__{rid}")
+    await clash.set({"uid": visitor.uid, "request_id": rid, "category": "adjust", "amount_cents": 0})
+    writer = Writer(agent, visitor, cid, rid)
 
-    def broken_writer(tx, charge, exists):
-        raise RuntimeError("writer exploded")
-
-    with pytest.raises(RuntimeError):
+    with pytest.raises(Exception) as excinfo:
         await billing.settle_round(
             agent=agent,
             payer=visitor,
             conversation_id=cid,
-            request_id=new_request_id(),
+            request_id=rid,
             succeeded=True,
             model=None,
-            write_messages=broken_writer,
+            write_messages=writer,
         )
-    assert await balance(visitor.uid) == 10000 and await doc(Col.CONVERSATIONS, cid) is None
+    assert "exist" in str(excinfo.value).lower()
+    assert writer.calls and writer.calls[-1][0].outcome == "charged"  # writes were queued
+
+    conv_ref = get_db().collection(Col.CONVERSATIONS).document(cid)
+    assert await doc(Col.CONVERSATIONS, cid) is None
+    for msg_id in (f"u_{rid}", f"m_{rid}"):
+        assert not (await conv_ref.collection(Col.MESSAGES).document(msg_id).get()).exists
     assert await doc(Col.USAGE, f"{agent.id}__{visitor.uid}") is None
+    assert await balance(visitor.uid) == 10000 and await balance(owner.uid) == owner_before
+    assert f"{owner.uid}__income_{rid}" not in await ledger(owner.uid)
+    stats_after = await stats(agent.id)
+    assert (stats_after or {}).get("rounds", 0) == (stats_before or {}).get("rounds", 0)
