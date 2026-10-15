@@ -102,3 +102,22 @@ async def test_price_over_max_is_rejected_before_running(client, a2a_env: A2AEnv
     ]
     assert calls == []
     assert a2a_env.runtime.models.get(agent.slug) is None or a2a_env.runtime.models[agent.slug].requests == []
+
+
+async def test_stack_build_failure_is_503_and_reserves_nothing(
+    client, a2a_env: A2AEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from topskill.a2a import _deps
+
+    async def broken(agent, version):
+        raise ImportError("topskill.chat is not available")
+
+    monkeypatch.setattr(_deps, "build_runtime_agent", broken)
+    owner = await make_user("creator")
+    agent = await make_agent(owner)
+    payer = unique("u_")
+    mandate, token = await issue_mandate(client, payer)
+    resp = await client.post(f"/a2a/{agent.slug}", json=_send(), headers={"X-AP2-Mandate": token})
+    assert resp.status_code == 503 and resp.json()["error"]["data"]["code"] == "service_unavailable"
+    m = (await get_db().collection(Col.MANDATES).document(mandate["id"]).get()).to_dict()
+    assert m["reserved_cents"] == 0

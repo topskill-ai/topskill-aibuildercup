@@ -10,14 +10,17 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel
 
 from topskill import repo, tasks
 from topskill.auth import CurrentUser, get_current_user
+from topskill.domain import AgentDoc
 from topskill.errors import ApiError, Codes, current_trace_id
 
 from . import _deps, assistant, directory
 from .cards import build_card, card_to_dict
-from .executor import get_stack, is_call_active, load_a2a_agent, settle_call
+from .directory import DirectoryAgent
+from .executor import A2AStack, get_stack, is_call_active, load_a2a_agent, settle_call
 from .mandates import reserve_call, verify_token
 
 log = logging.getLogger(__name__)
@@ -105,6 +108,21 @@ def _force_blocking(method: str, params: dict) -> None:
         config.pop("blocking", None)
 
 
+async def _stack(slug: str, agent: AgentDoc) -> A2AStack:
+    """The cached stack; a build failure (e.g. a dependency that cannot load) becomes 503."""
+    try:
+        return await get_stack(slug, agent)
+    except ApiError:
+        raise
+    except Exception as exc:
+        log.exception("a2a_stack_build_failed slug=%s", slug)
+        raise ApiError(503, Codes.SERVICE_UNAVAILABLE, "This agent is temporarily unavailable.") from exc
+
+
+class DirectoryResponse(BaseModel):
+    items: list[DirectoryAgent]
+
+
 @router.get("/a2a/{slug}/.well-known/agent-card.json")
 async def get_agent_card(slug: str) -> JSONResponse:
     agent = await load_a2a_agent(slug)
@@ -144,7 +162,7 @@ async def a2a_rpc(slug: str, request: Request) -> Response:
 
     if method in READ:  # verified, never reserved or charged
         try:
-            stack = await get_stack(slug, agent)
+            stack = await _stack(slug, agent)
         except ApiError as err:
             return api_error_rpc(rpc_id, err)
         return await stack.dispatcher.handle_requests(request)
@@ -155,11 +173,16 @@ async def a2a_rpc(slug: str, request: Request) -> Response:
         return rpc_error(rpc_id, -32602, 400, Codes.VALIDATION_ERROR, "Invalid params: message.messageId.")
     _force_blocking(method, params)
     try:
-        stack = await get_stack(slug, agent)  # before reserving: a build failure must not hold budget
+        stack = await _stack(slug, agent)  # before reserving: a build failure must not hold budget
         price = await _deps.billing().preflight_a2a(agent, mandate)
         call_id = await reserve_call(mandate, agent, message_id, request_preview(message), price)
     except ApiError as err:
         return api_error_rpc(rpc_id, err)
+    except Exception:  # nothing was reserved (T8 is all-or-nothing)
+        log.exception("a2a_preflight_failed slug=%s", slug)
+        return rpc_error(
+            rpc_id, -32001, 503, Codes.SERVICE_UNAVAILABLE, "This agent is temporarily unavailable."
+        )
     request.state.a2a_call_id = call_id
     log.info("a2a_call_reserved slug=%s call_id=%s price_cents=%s method=%s", slug, call_id, price, method)
     try:
@@ -175,10 +198,9 @@ async def a2a_rpc(slug: str, request: Request) -> Response:
     return resp
 
 
-@router.get("/api/public/a2a/directory", response_model=dict)
-async def a2a_directory(q: str | None = Query(None, max_length=500)) -> dict:
-    items = await directory.search(q)
-    return {"items": [item.model_dump() for item in items]}
+@router.get("/api/public/a2a/directory", response_model=DirectoryResponse)
+async def a2a_directory(q: str | None = Query(None, max_length=500)) -> DirectoryResponse:
+    return DirectoryResponse(items=await directory.search(q))
 
 
 @router.post("/api/demo/assistant/chat")
