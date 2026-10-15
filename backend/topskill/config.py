@@ -168,6 +168,28 @@ class Settings(BaseSettings):
     trace_sample_ratio_health: float = Field(0.01, ge=0.0, le=1.0)  # /health, /healthz, meta, OPTIONS
     trace_capture_content: bool = False  # ADK prompt/response bodies in spans (visitor text = PII)
 
+    # ---- analytics: "Ask your data" over BigQuery (P2, SPEC §18). Off unless enabled; outside prod the
+    # prod dataset is refused (use topskill_analytics_dev).
+    analytics_enabled: bool = False
+    analytics_project: str = ""  # "" = GOOGLE_CLOUD_PROJECT
+    analytics_dataset: str = "topskill_analytics"
+    analytics_location: str = "asia-southeast1"
+    analytics_max_bytes: int = Field(100 * 1024 * 1024, ge=1)  # dry-run cap and maximum_bytes_billed
+    analytics_query_timeout_s: int = Field(20, ge=1, le=120)
+    analytics_max_rows: int = Field(200, ge=1, le=5000)
+    analytics_ask_per_hour: int = Field(30, ge=0)
+    analytics_sync_min_interval_s: int = Field(60, ge=0)
+    analytics_sync_wait_s: int = Field(5, ge=0, le=120)  # the scheduler already keeps data ≤ 15 min old
+    analytics_sync_invokers: CsvList = Field(default_factory=list)  # OIDC emails allowed to call the sync
+    analytics_sync_audience: str = ""  # "" = PUBLIC_API_BASE
+    model_analytics: str = "gemini-3.8-flash"
+    model_analytics_fallback: str = "gemini-3-flash-preview"
+    analytics_plan_timeout_s: int = Field(25, ge=1, le=300)  # one SQL-writing model call
+    analytics_answer_timeout_s: int = Field(15, ge=1, le=300)  # summary call; on timeout: plain sentence
+    analytics_ask_timeout_s: int = Field(60, ge=1, le=600)  # whole question → 503 service_unavailable
+
+    _split_analytics_lists = field_validator("analytics_sync_invokers", mode="before")(_split_csv)
+
     _split_lists = field_validator("chat_model_allowlist", "cors_origins", mode="before")(_split_csv)
     _split_guard_lists = field_validator(
         "guard_prompt_block_filters", "guard_response_block_filters", mode="before"

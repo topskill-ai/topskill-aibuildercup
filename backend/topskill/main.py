@@ -17,6 +17,7 @@ from topskill.a2a.mandate_router import router as mandate_router
 from topskill.a2a.router import router as a2a_router
 from topskill.agents.public_router import router as agents_public_router
 from topskill.agents.router import router as agents_router
+from topskill.analytics.router import router as analytics_router  # P2 (SPEC §18 analytics)
 from topskill.auth import init_firebase
 from topskill.billing.router import public_router as billing_public_router
 from topskill.billing.router import router as billing_router
@@ -59,6 +60,7 @@ ROUTERS: tuple[tuple[APIRouter, str, str], ...] = (
     (mandate_router, "", "topskill.a2a.mandate_router:router"),
     (a2a_router, "", "topskill.a2a.router:router"),
     (voice_router, "/api/public", "topskill.voice.router:router"),
+    (analytics_router, "/api", "topskill.analytics.router:router"),
 )
 
 
