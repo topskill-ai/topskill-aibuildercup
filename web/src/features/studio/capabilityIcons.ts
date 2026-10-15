@@ -1,0 +1,45 @@
+import {
+  BookOpen,
+  Briefcase,
+  Calculator,
+  ChartLine,
+  ClipboardList,
+  FileText,
+  Globe,
+  GraduationCap,
+  HeartPulse,
+  Landmark,
+  Lightbulb,
+  MessageCircle,
+  Plane,
+  Scale,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
+
+/** The capability icon enum of SPEC §5.2 (`CapabilityIcon`, lucide-react names). */
+export const CAPABILITY_ICONS: Record<string, LucideIcon> = {
+  sparkles: Sparkles,
+  "book-open": BookOpen,
+  search: Search,
+  "file-text": FileText,
+  briefcase: Briefcase,
+  "graduation-cap": GraduationCap,
+  scale: Scale,
+  "heart-pulse": HeartPulse,
+  calculator: Calculator,
+  globe: Globe,
+  "message-circle": MessageCircle,
+  "clipboard-list": ClipboardList,
+  lightbulb: Lightbulb,
+  "shield-check": ShieldCheck,
+  "chart-line": ChartLine,
+  users: Users,
+  plane: Plane,
+  landmark: Landmark,
+};
+
+export const CAPABILITY_ICON_NAMES = Object.keys(CAPABILITY_ICONS);
