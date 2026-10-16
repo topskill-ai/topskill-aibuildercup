@@ -25,19 +25,19 @@ function SlugHint({ status }: { status: SlugStatus }) {
       );
     case "available":
       return (
-        <span className="inline-flex items-center gap-1 text-success">
+        <span className="inline-flex items-center gap-1 text-success-text">
           <Check aria-hidden className="h-3.5 w-3.5" /> Available
         </span>
       );
     case "unavailable":
       return (
-        <span className="inline-flex items-center gap-1 text-danger">
+        <span className="inline-flex items-center gap-1 text-danger-text">
           <X aria-hidden className="h-3.5 w-3.5" />
           {status.reason ? SLUG_REASON_TEXT[status.reason] : "Not available."}
         </span>
       );
     case "invalid":
-      return <span className="text-danger">{status.message}</span>;
+      return <span className="text-danger-text">{status.message}</span>;
     case "error":
       return <span>Could not check the address now; it is checked again when you publish.</span>;
   }
@@ -81,7 +81,7 @@ export function GoLiveStep({
         >
           {(c) => (
             <div className="flex min-w-0 items-stretch">
-              <span className="hidden items-center rounded-l-control border border-r-0 border-border bg-slate-50 px-3 font-mono text-[13px] text-muted sm:flex">
+              <span className="hidden items-center rounded-l-control border border-r-0 border-border bg-sunken px-3 font-mono text-[13px] text-muted sm:flex">
                 {publicBase}/a/
               </span>
               <Input

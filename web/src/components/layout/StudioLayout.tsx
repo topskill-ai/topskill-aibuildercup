@@ -16,7 +16,7 @@ export function StudioLayout() {
             className={({ isActive }) =>
               cn(
                 "inline-flex h-8 items-center gap-1.5 rounded-control px-3 text-sm font-medium",
-                isActive ? "bg-primary-soft text-primary" : "text-muted hover:bg-slate-100 hover:text-text",
+                isActive ? "bg-primary-soft text-primary" : "text-muted hover:bg-mist hover:text-text",
               )
             }
           >

@@ -34,7 +34,7 @@ function Transcript({ messages }: { messages: ChatMessage[] }) {
           <div
             className={cn(
               "max-w-[85%] min-w-0 rounded-card px-4 py-2.5 text-sm",
-              m.role === "user" ? "bg-primary text-primary-fg" : "border border-border bg-surface",
+              m.role === "user" ? "bg-primary-solid text-primary-fg" : "border border-border bg-surface",
             )}
           >
             {m.role === "user" ? (
@@ -42,7 +42,7 @@ function Transcript({ messages }: { messages: ChatMessage[] }) {
             ) : (
               <Markdown text={m.text} citations={m.citations} />
             )}
-            <div className={cn("mt-1 text-2xs", m.role === "user" ? "text-indigo-100" : "text-subtle")}>
+            <div className={cn("mt-1 text-2xs", m.role === "user" ? "text-primary-fg/80" : "text-subtle")}>
               {formatDateTime(m.created_at)}
               {m.status !== "ok" ? ` · ${m.status}` : ""}
             </div>
@@ -158,7 +158,7 @@ export default function RecordDetailPage() {
               description={`Started ${formatDateTime(row.created_at)}${row.completed_at ? ` · completed ${formatDateTime(row.completed_at)}` : ""}`}
             />
             <CardBody>
-              {row.summary ? <p className="mb-4 rounded-control bg-slate-50 p-3 text-sm">{row.summary}</p> : null}
+              {row.summary ? <p className="mb-4 rounded-control bg-sunken p-3 text-sm">{row.summary}</p> : null}
               <div className="divide-y divide-border">
                 {fields.map((f) => {
                   const v = row.data[f.key];
@@ -166,7 +166,7 @@ export default function RecordDetailPage() {
                     <div key={f.key} className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-3 py-2.5 text-sm">
                       <div className="text-muted">
                         {f.label}
-                        {f.required ? <span className="text-warning"> *</span> : null}
+                        {f.required ? <span className="text-warning-text"> *</span> : null}
                       </div>
                       <div className="min-w-0 break-words">
                         {formatRecordValue(f, v)}

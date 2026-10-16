@@ -2,10 +2,10 @@ import { useId, type InputHTMLAttributes, type ReactNode, type Ref } from "react
 import { cn } from "@/lib/cn";
 
 export const controlClasses =
-  "block w-full min-w-0 rounded-control border border-border bg-surface px-3 text-[15px] text-text " +
+  "block w-full min-w-0 rounded-control border border-border bg-surface px-3 text-[15px] text-text shadow-soft " +
   "placeholder:text-subtle transition-colors duration-150 ease-out " +
   "hover:border-border-strong focus:border-primary focus:outline-none focus:ring-3 focus:ring-primary/15 " +
-  "disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-muted " +
+  "disabled:cursor-not-allowed disabled:bg-sunken disabled:text-muted " +
   "aria-[invalid=true]:border-danger aria-[invalid=true]:focus:ring-danger/15";
 
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -59,7 +59,7 @@ export function Field({ label, hint, error, className, children }: FieldProps) {
         </p>
       ) : null}
       {error ? (
-        <p id={errorId} className="mt-1.5 text-[13px] text-danger">
+        <p id={errorId} className="mt-1.5 text-[13px] text-danger-text">
           {error}
         </p>
       ) : null}

@@ -9,7 +9,7 @@ import { Skeleton, SkeletonText } from "@/components/ui/Skeleton";
 import { AgentCard } from "./AgentCard";
 import { usePublicAgents } from "./api";
 
-const GRID = "grid grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))] gap-4";
+const GRID = "grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] gap-5 lg:gap-[22px]";
 const SEARCH_DEBOUNCE_MS = 300;
 
 /** Debounced copy of `value`. */
@@ -26,7 +26,7 @@ function GridSkeleton() {
   return (
     <div role="status" aria-label="Loading agents" className={GRID}>
       {Array.from({ length: 6 }, (_, i) => (
-        <div key={i} className="rounded-card border border-border bg-surface p-5">
+        <div key={i} className="rounded-card border border-border bg-surface p-6">
           <div className="mb-4 flex items-center gap-3">
             <Skeleton className="h-12 w-12 rounded-full" />
             <div className="flex-1 space-y-2">
@@ -132,28 +132,28 @@ export function Marketplace() {
 
   return (
     <section aria-labelledby="marketplace-title" className="min-w-0">
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
         <div className="min-w-0">
-          <h2 id="marketplace-title" className="text-xl font-semibold sm:text-2xl">
+          <h2 id="marketplace-title" className="text-2xl font-bold tracking-[-0.024em] sm:text-[29px]">
             Marketplace
           </h2>
-          <p className="mt-1 text-sm text-muted">Expert agents you can chat with now, or hire from your own AI agent.</p>
+          <p className="mt-1.5 text-[15px] text-muted">Expert agents you can chat with now, or hire from your own AI agent.</p>
         </div>
         <form
           role="search"
-          className="relative w-full sm:w-80"
+          className="relative w-full sm:w-[280px] sm:shrink-0"
           onSubmit={(e) => {
             e.preventDefault();
           }}
         >
-          <Search aria-hidden className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-subtle" />
+          <Search aria-hidden className="pointer-events-none absolute top-1/2 left-4 h-4 w-4 -translate-y-1/2 text-faint" />
           <Input
             type="search"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Search agents"
             aria-label="Search agents"
-            className="pr-9 pl-9 [&::-webkit-search-cancel-button]:hidden"
+            className="pr-9 pl-10 [&::-webkit-search-cancel-button]:hidden"
             maxLength={100}
           />
           {input ? (
@@ -161,7 +161,7 @@ export function Marketplace() {
               type="button"
               aria-label="Clear search"
               onClick={() => setInput("")}
-              className="absolute top-1/2 right-2 -translate-y-1/2 rounded-control p-1 text-subtle hover:bg-slate-100 hover:text-text"
+              className="absolute top-1/2 right-2 -translate-y-1/2 rounded-control p-1 text-subtle hover:bg-mist hover:text-text"
             >
               <X aria-hidden className="h-4 w-4" />
             </button>

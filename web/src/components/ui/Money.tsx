@@ -20,8 +20,8 @@ export function Money({ cents, unit = true, signed = false, colorPositive = fals
     <span
       className={cn(
         "whitespace-nowrap",
-        negative && "text-danger",
-        colorPositive && cents > 0 && "text-success",
+        negative && "text-danger-text",
+        colorPositive && cents > 0 && "text-success-text",
         className,
       )}
     >

@@ -25,7 +25,7 @@ function ResultTable({ answer }: { answer: AnalyticsAnswer }) {
   return (
     <div className="max-h-80 overflow-auto rounded-control border border-border">
       <table className="w-full min-w-max border-collapse text-sm">
-        <thead className="sticky top-0 bg-slate-50 text-left text-xs font-medium text-muted">
+        <thead className="sticky top-0 bg-sunken text-left text-xs font-medium text-muted">
           <tr>
             {answer.columns.map((c) => (
               <th key={c.name} scope="col" className={cn("px-3 py-2", isNumericType(c.type) && "text-right")}>
@@ -67,7 +67,7 @@ function AnswerView({ answer }: { answer: AnalyticsAnswer }) {
         {answered ? (
           <Sparkles aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
         ) : (
-          <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+          <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-warning-text" />
         )}
         <p className="min-w-0 text-[15px] leading-6 break-words">{answer.answer}</p>
       </div>
@@ -79,7 +79,7 @@ function AnswerView({ answer }: { answer: AnalyticsAnswer }) {
             <ChevronRight aria-hidden className="h-4 w-4 transition-transform group-open:rotate-90" />
             Show SQL
           </summary>
-          <pre className="overflow-x-auto border-t border-border bg-slate-50 px-3 py-2 font-mono text-xs leading-5 whitespace-pre-wrap break-words text-text">
+          <pre className="overflow-x-auto border-t border-border bg-sunken px-3 py-2 font-mono text-xs leading-5 whitespace-pre-wrap break-words text-text">
             {answer.sql}
           </pre>
         </details>

@@ -1,5 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
-import { Bot, ChevronDown, LayoutDashboard, LogOut, Menu, Store, Wallet as WalletIcon, X } from "lucide-react";
+import {
+  Bot,
+  ChevronDown,
+  CreditCard,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  Store,
+  Wallet as WalletIcon,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router";
 import { api } from "@/api/client";
@@ -12,6 +22,8 @@ import { Avatar } from "../ui/Avatar";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { Money } from "../ui/Money";
+import { LogoMark } from "./LogoMark";
+import { ThemeToggle } from "./ThemeToggle";
 
 const NAV = [
   { to: "/", label: "Marketplace", icon: Store, end: true },
@@ -20,13 +32,11 @@ const NAV = [
   { to: "/wallet", label: "Wallet", icon: WalletIcon, end: false },
 ] as const;
 
-export function Logo({ className }: { className?: string }) {
+function Logo({ className }: { className?: string }) {
   return (
-    <Link to="/" className={cn("flex shrink-0 items-center gap-2 font-semibold tracking-display text-text", className)}>
-      <span className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-primary text-[13px] font-bold text-white">
-        T
-      </span>
-      <span className="text-[17px]">TopSkill</span>
+    <Link to="/" className={cn("flex shrink-0 items-center gap-2.5 text-text", className)}>
+      <LogoMark />
+      <span className="font-display text-[19px] font-bold tracking-display">TopSkill</span>
     </Link>
   );
 }
@@ -67,9 +77,9 @@ function UserMenu() {
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1.5 rounded-chip p-0.5 pr-1.5 hover:bg-slate-100"
+        className="flex items-center gap-1 rounded-chip p-0.5 pr-1 hover:bg-mist"
       >
-        <Avatar src={me?.photo_url} name={name} size={30} accent="violet" />
+        <Avatar solid name={name} src={me?.photo_url} size={34} className="border-2 border-surface ring-1 ring-border" />
         <ChevronDown aria-hidden className="h-4 w-4 text-subtle" />
         <span className="sr-only">Account menu</span>
       </button>
@@ -93,7 +103,7 @@ function UserMenu() {
             role="menuitem"
             to="/wallet"
             onClick={() => setOpen(false)}
-            className="flex items-center gap-2 rounded-control px-3 py-2 text-sm text-text hover:bg-slate-50"
+            className="flex items-center gap-2 rounded-control px-3 py-2 text-sm text-text hover:bg-mist"
           >
             <WalletIcon aria-hidden className="h-4 w-4 text-subtle" /> Wallet
           </Link>
@@ -104,7 +114,7 @@ function UserMenu() {
               setOpen(false);
               void signOut();
             }}
-            className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-left text-sm text-text hover:bg-slate-50"
+            className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-left text-sm text-text hover:bg-mist"
           >
             <LogOut aria-hidden className="h-4 w-4 text-subtle" /> Sign out
           </button>
@@ -131,34 +141,35 @@ export function TopNav() {
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     cn(
-      "inline-flex h-9 items-center gap-1.5 rounded-control px-3 text-sm font-medium transition-colors duration-150",
-      isActive ? "bg-primary-soft text-primary" : "text-muted hover:bg-slate-100 hover:text-text",
+      "inline-flex h-9 items-center gap-1.5 rounded-[9px] px-3.5 text-sm transition-colors duration-150",
+      isActive ? "bg-primary-soft font-semibold text-primary" : "font-medium text-muted hover:bg-mist hover:text-text",
     );
 
   return (
-    <header className="sticky top-0 z-30 border-b border-border bg-surface/90 backdrop-blur supports-[backdrop-filter]:bg-surface/80">
-      <div className="page-container flex h-14 items-center gap-3">
+    <header className="sticky top-0 z-30 border-b border-border bg-surface/90 backdrop-blur-md backdrop-saturate-150 supports-[backdrop-filter]:bg-surface/80 dark:bg-bg/85 dark:supports-[backdrop-filter]:bg-bg/80">
+      <div className="page-container flex h-16 items-center gap-3">
         <Logo />
-        <nav aria-label="Main" className="ml-4 hidden items-center gap-1 md:flex">
+        <nav aria-label="Main" className="ml-6 hidden items-center gap-1 md:flex">
           {NAV.map(({ to, label, end }) => (
             <NavLink key={to} to={to} end={end} className={linkClass}>
               {label}
             </NavLink>
           ))}
         </nav>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2 sm:gap-3">
+          <ThemeToggle />
           {signedIn && wallet.data ? (
             <Link
               to="/wallet"
-              className="hidden items-center gap-1.5 rounded-chip border border-border px-3 py-1 text-[13px] text-muted hover:border-border-strong hover:text-text sm:inline-flex"
+              className="hidden items-center gap-2 rounded-chip border border-border bg-surface px-3.5 py-1.5 text-[13.5px] font-semibold text-text-2 shadow-soft transition-[border-color,box-shadow] duration-150 hover:border-faint hover:shadow-lift sm:inline-flex"
               aria-label="Wallet balance"
             >
-              <WalletIcon aria-hidden className="h-3.5 w-3.5" />
-              <Money cents={wallet.data.balance_cents} className="font-medium text-text" />
+              <CreditCard aria-hidden className="h-[15px] w-[15px] text-primary" />
+              <Money cents={wallet.data.balance_cents} />
             </Link>
           ) : null}
           {status === "loading" ? (
-            <span aria-hidden className="h-8 w-8 rounded-full bg-slate-100" />
+            <span aria-hidden className="h-[34px] w-[34px] rounded-full bg-mist" />
           ) : signedIn ? (
             <UserMenu />
           ) : (

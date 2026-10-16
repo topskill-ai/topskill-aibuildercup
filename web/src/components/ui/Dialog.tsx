@@ -91,7 +91,7 @@ export function Dialog({
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6">
       <div
         aria-hidden
-        className="absolute inset-0 bg-slate-900/40 animate-fade-in"
+        className="absolute inset-0 bg-overlay animate-fade-in"
         onClick={() => dismissible && onOpenChange(false)}
       />
       <div
@@ -123,7 +123,7 @@ export function Dialog({
               type="button"
               aria-label="Close"
               onClick={() => onOpenChange(false)}
-              className="-mr-1 -mt-1 rounded-control p-1.5 text-subtle hover:bg-slate-100 hover:text-text"
+              className="-mr-1 -mt-1 rounded-control p-1.5 text-subtle hover:bg-mist hover:text-text"
             >
               <X className="h-4 w-4" />
             </button>

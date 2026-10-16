@@ -3,16 +3,40 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#4F46E5" />
+    <meta name="theme-color" content="#F7F8FB" />
     <meta
       name="description"
       content="TopSkill turns an expert's skill into a paid AI agent that people and other AI agents can use, with grounded answers and per-call revenue sharing."
     />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!--
+      Theme before first paint (no flash): ?theme= → localStorage "topskill-theme" → prefers-color-scheme.
+      Mirrors resolveInitialTheme in src/lib/theme.ts and sets theme-color like setTheme (THEME_COLORS);
+      theme.test.ts runs this script.
+    -->
+    <script id="theme-init">
+      (function () {
+        var t = null;
+        try {
+          t = new URLSearchParams(location.search).get("theme");
+          if (t !== "light" && t !== "dark") t = localStorage.getItem("topskill-theme");
+        } catch (e) {}
+        if (t !== "light" && t !== "dark") {
+          try {
+            t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          } catch (e) {
+            t = "light";
+          }
+        }
+        document.documentElement.setAttribute("data-theme", t);
+        var m = document.querySelector('meta[name="theme-color"]');
+        if (m) m.setAttribute("content", t === "dark" ? "#0E0F1E" : "#F7F8FB");
+      })();
+    </script>
+    <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Sora:wght@600;700&display=swap"
       rel="stylesheet"
     />
     <title>TopSkill</title>

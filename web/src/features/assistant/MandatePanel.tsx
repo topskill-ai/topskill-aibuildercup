@@ -20,7 +20,7 @@ import type { ActiveMandate } from "./useAssistant";
 
 function Fact({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
   return (
-    <div className={cn("min-w-0 rounded-control bg-slate-50 px-3 py-2", className)}>
+    <div className={cn("min-w-0 rounded-control bg-sunken px-3 py-2", className)}>
       <div className="text-2xs font-medium tracking-wide text-subtle uppercase">{label}</div>
       <div className="mt-0.5 truncate text-sm font-semibold">{children}</div>
     </div>
@@ -75,10 +75,10 @@ export function MandateCard({ active, counters, streaming, onAuthorise, onRevoke
 
   return (
     <section aria-label="Payment mandate" className="overflow-hidden rounded-card border border-border bg-surface">
-      <div className="bg-gradient-to-br from-indigo-50 via-white to-violet-50 px-5 pt-5 pb-4">
+      <div className="bg-gradient-to-br from-primary-soft via-surface to-accent-violet-soft px-5 pt-5 pb-4">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-white">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-solid text-primary-fg">
               <ShieldCheck aria-hidden className="h-4 w-4" />
             </span>
             <div>
@@ -102,7 +102,7 @@ export function MandateCard({ active, counters, streaming, onAuthorise, onRevoke
         </Fact>
         <Fact label="Paid calls">{m.calls}</Fact>
         <Fact label={status === "expired" ? "Expired" : "Expires in"}>
-          <span className={cn("font-mono tabular-nums", remainingMs < 5 * 60_000 && status === "active" && "text-warning")}>
+          <span className={cn("font-mono tabular-nums", remainingMs < 5 * 60_000 && status === "active" && "text-warning-text")}>
             {status === "expired" ? "—" : formatCountdown(remainingMs)}
           </span>
         </Fact>

@@ -1,51 +1,111 @@
 @import "tailwindcss";
 
 /*
- * TopSkill design tokens (SPEC §11.3). Light theme only.
- * Use the generated utilities (bg-surface, text-muted, border-border, bg-primary, text-danger, …)
- * instead of raw hex values in components.
+ * TopSkill design tokens (SPEC §11.3). Light values live in @theme; the dark theme overrides the same
+ * variables under :root[data-theme="dark"] (set before first paint by the inline script in index.html,
+ * toggled by lib/theme.ts), so every token utility (bg-surface, text-muted, border-border, bg-primary,
+ * text-danger, …) follows the theme. Use these utilities instead of raw hex / slate-* values.
  */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Sora", "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-  --color-bg: #f8fafc;
+  --color-bg: #f7f8fb;
   --color-surface: #ffffff;
-  --color-border: #e2e8f0;
-  --color-border-strong: #cbd5e1;
-  --color-text: #0f172a;
-  --color-muted: #475569;
-  --color-subtle: #94a3b8;
+  /* Recessed panels, table heads, read-only fields (was slate-50). */
+  --color-sunken: #f5f6fa;
+  /* Neutral chips, tracks, hover fills (was slate-100). */
+  --color-mist: #eef0f6;
+  --color-border: #e5e8f0;
+  --color-border-strong: #d3d8e4;
+  --color-text: #14152b;
+  --color-text-2: #2b2d47;
+  /* muted / subtle stay >= 4.5:1 on surface and sunken (body-size text); faint is for decorative
+     icons only, never text. */
+  --color-muted: #5a6180;
+  --color-subtle: #676e8b;
+  --color-faint: #a7afc3;
 
-  --color-primary: #4f46e5;
-  --color-primary-hover: #4338ca;
-  --color-primary-soft: #eef2ff;
+  /* `primary` is the brand indigo for text, rings and soft fills; `primary-solid` is the fill behind
+     white text (buttons, user bubbles) — the two differ in the dark theme. */
+  --color-primary: #4f52e3;
+  --color-primary-hover: #4245cc;
+  --color-primary-solid: #4f52e3;
+  --color-primary-solid-hover: #4245cc;
+  --color-primary-soft: #eef0fe;
   --color-primary-fg: #ffffff;
+  /* Hero call to action: ink in light, indigo in dark. */
+  --color-cta: #14152b;
+  --color-cta-hover: #2b2d47;
+  /* Text/icons drawn on solid success / warning / danger / accent fills. */
+  --color-on-accent: #ffffff;
 
-  --color-success: #059669;
-  --color-success-soft: #ecfdf5;
-  --color-warning: #d97706;
-  --color-warning-soft: #fffbeb;
+  /* `success` / `warning` / `danger`: icons, bars, dots, borders. `*-text`: any status-coloured text
+     (>= 4.5:1 on white, bg, sunken, mist and the matching soft tint). `*-solid`: fills behind on-accent text. */
+  --color-success: #1d9e75;
+  --color-success-soft: #e7f6f0;
+  --color-success-text: #0f7a5a;
+  --color-success-solid: #0f7a5a;
+  --color-warning: #d98324;
+  --color-warning-soft: #fbf1e4;
+  --color-warning-text: #995510;
+  --color-warning-solid: #a95f12;
   --color-danger: #e11d48;
   --color-danger-soft: #fff1f2;
+  --color-danger-text: #be123c;
 
-  /* Agent accents (+ 50 tints) for avatar rings, agent header bands, chips. */
+  /* Agent accents (+ soft tints) for avatar rings, agent header bands, chips; `*-text` for accent-coloured
+     text such as chip labels and monograms (>= 4.5:1 on the soft tint and on surfaces). */
   --color-accent-amber: #f59e0b;
-  --color-accent-amber-soft: #fffbeb;
+  --color-accent-amber-soft: #fef6e7;
+  --color-accent-amber-text: #9a5b0b;
   --color-accent-blue: #3b82f6;
-  --color-accent-blue-soft: #eff6ff;
-  --color-accent-emerald: #10b981;
-  --color-accent-emerald-soft: #ecfdf5;
+  --color-accent-blue-soft: #eef4ff;
+  --color-accent-blue-text: #1d4ed8;
+  --color-accent-emerald: #1d9e75;
+  --color-accent-emerald-soft: #e7f6f0;
+  --color-accent-emerald-text: #0f7a5a;
   --color-accent-rose: #f43f5e;
   --color-accent-rose-soft: #fff1f2;
-  --color-accent-violet: #8b5cf6;
-  --color-accent-violet-soft: #f5f3ff;
+  --color-accent-rose-text: #be123c;
+  --color-accent-violet: #7c5cfc;
+  --color-accent-violet-soft: #f3f0ff;
+  --color-accent-violet-text: #6741e8;
 
-  --radius-card: 12px;
-  --radius-control: 8px;
+  /* Brand gradient (balance card, assistant mark) behind primary-fg text. `brand-from` is also the label
+     colour of the white `inverse` button sitting on that gradient (>= 4.5:1 on it in both themes). */
+  --color-brand-from: #4f52e3;
+  --color-brand-to: #7048e8;
+  /* Light tile behind the ink logo mark / white-background hero art (transparent in light). */
+  --color-brand-tile: transparent;
+  /* Code blocks (JSON / curl / Markdown pre): dark panel in both themes. */
+  --color-code-bg: #14152b;
+  --color-code-fg: #e4e6f2;
+  /* Dialog scrim. */
+  --color-overlay: rgba(20, 21, 43, 0.4);
+  /* Hero floating cards (frosted surface). */
+  --color-float-card: rgba(255, 255, 255, 0.9);
+  --color-float-card-border: #e5e8f0;
+  /* Home hero backdrop: glow tints and the top of the vertical wash. */
+  --color-hero-glow: color-mix(in srgb, var(--color-primary-solid) 7%, transparent);
+  --color-hero-glow-2: color-mix(in srgb, var(--color-faint) 14%, transparent);
+  --color-hero-top: #fdfdfe;
+
+  --radius-card: 16px;
+  --radius-control: 10px;
   --radius-chip: 999px;
 
-  --shadow-pop: 0 8px 24px rgba(15, 23, 42, 0.08);
+  /* Two elevation steps: resting controls/pills (soft) and hover/floating cards (lift), plus popovers
+     (pop) and the hero call-to-action glow (cta). Tailwind inlines literal shadow values into the
+     utilities, so the tokens point at --elevation-* (defined per theme in @layer base) to stay switchable. */
+  --shadow-soft: var(--elevation-soft);
+  --shadow-lift: var(--elevation-lift);
+  --shadow-pop: var(--elevation-pop);
+  --shadow-cta: var(--elevation-cta);
+  --shadow-cta-hover: var(--elevation-cta-hover);
 
   --text-base: 15px;
   --text-base--line-height: 1.6;
@@ -53,6 +113,7 @@
   --text-2xs--line-height: 1.4;
 
   --tracking-display: -0.02em;
+  --tracking-hero: -0.032em;
 
   --container-page: 1200px;
 
@@ -61,6 +122,7 @@
   --animate-shimmer: shimmer 1.6s linear infinite;
   --animate-caret: caret 1s steps(1) infinite;
   --animate-fade-in: fade-in 150ms ease-out;
+  --animate-floaty: floaty 5.5s ease-in-out infinite;
 
   @keyframes shimmer {
     0% {
@@ -78,6 +140,15 @@
     50.01%,
     100% {
       opacity: 0;
+    }
+  }
+  @keyframes floaty {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-9px);
     }
   }
   @keyframes fade-in {
@@ -108,6 +179,83 @@
 }
 
 @layer base {
+  :root {
+    --elevation-soft: 0 1px 2px rgba(20, 21, 43, 0.05), 0 2px 8px rgba(20, 21, 43, 0.04);
+    --elevation-lift: 0 6px 16px rgba(20, 21, 43, 0.07), 0 16px 40px rgba(20, 21, 43, 0.08);
+    --elevation-pop: 0 8px 24px rgba(20, 21, 43, 0.1);
+    --elevation-cta: 0 8px 20px rgba(20, 21, 43, 0.22);
+    --elevation-cta-hover: 0 12px 28px rgba(20, 21, 43, 0.26);
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --color-bg: #0e0f1e;
+    --color-surface: #161832;
+    --color-sunken: #12142a;
+    --color-mist: #22244a;
+    --color-border: #282a4e;
+    --color-border-strong: #363a66;
+    --color-text: #eceef8;
+    --color-text-2: #c9cde1;
+    --color-muted: #9ba1bc;
+    --color-subtle: #858ba8;
+    --color-faint: #6e7494;
+
+    --color-primary: #8b8ef6;
+    --color-primary-hover: #a3a5f8;
+    --color-primary-solid: #6c6ff0;
+    --color-primary-solid-hover: #7d80f5;
+    --color-primary-soft: rgba(139, 142, 246, 0.13);
+    --color-primary-fg: #ffffff;
+    --color-cta: #6c6ff0;
+    --color-cta-hover: #7d80f5;
+    --color-on-accent: #0e0f1e;
+
+    --color-success: #3ecf9e;
+    --color-success-soft: rgba(62, 207, 158, 0.13);
+    --color-success-text: var(--color-success);
+    --color-success-solid: #3ecf9e;
+    --color-warning: #eba94e;
+    --color-warning-soft: rgba(235, 169, 78, 0.14);
+    --color-warning-text: var(--color-warning);
+    --color-warning-solid: #eba94e;
+    --color-danger: #fb7185;
+    --color-danger-soft: rgba(251, 113, 133, 0.14);
+    --color-danger-text: var(--color-danger);
+
+    --color-accent-amber: #f5b03d;
+    --color-accent-amber-soft: rgba(245, 176, 61, 0.14);
+    --color-accent-amber-text: var(--color-accent-amber);
+    --color-accent-blue: #6aa2f8;
+    --color-accent-blue-soft: rgba(106, 162, 248, 0.14);
+    --color-accent-blue-text: var(--color-accent-blue);
+    --color-accent-emerald: #3ecf9e;
+    --color-accent-emerald-soft: rgba(62, 207, 158, 0.13);
+    --color-accent-emerald-text: var(--color-accent-emerald);
+    --color-accent-rose: #fb7185;
+    --color-accent-rose-soft: rgba(251, 113, 133, 0.14);
+    --color-accent-rose-text: var(--color-accent-rose);
+    --color-accent-violet: #9d85ff;
+    --color-accent-violet-soft: rgba(157, 133, 255, 0.15);
+    --color-accent-violet-text: var(--color-accent-violet);
+
+    --color-brand-from: #3f42b8;
+    --color-brand-to: #5a3fbf;
+    --color-brand-tile: #f3f4fb;
+    --color-code-bg: #0b0c1a;
+    --color-code-fg: #e4e6f2;
+    --color-overlay: rgba(0, 0, 0, 0.6);
+    --color-float-card: rgba(23, 25, 53, 0.92);
+    --color-float-card-border: #2e3058;
+    --color-hero-glow: color-mix(in srgb, var(--color-primary-solid) 14%, transparent);
+    --color-hero-glow-2: color-mix(in srgb, var(--color-primary-solid) 7%, transparent);
+    --color-hero-top: #11122a;
+
+    --elevation-soft: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 10px rgba(0, 0, 0, 0.3);
+    --elevation-lift: 0 8px 20px rgba(0, 0, 0, 0.4), 0 18px 48px rgba(0, 0, 0, 0.45);
+    --elevation-pop: 0 10px 30px rgba(0, 0, 0, 0.5);
+    --elevation-cta: 0 8px 24px rgba(108, 111, 240, 0.35);
+    --elevation-cta-hover: 0 12px 32px rgba(108, 111, 240, 0.45);
+  }
   html {
     color-scheme: light;
     -webkit-text-size-adjust: 100%;
@@ -129,12 +277,14 @@
   h2,
   h3,
   h4 {
+    font-family: var(--font-display);
     font-weight: 600;
     letter-spacing: var(--tracking-display);
     color: var(--color-text);
   }
   ::selection {
-    background: var(--color-primary-soft);
+    background: var(--color-primary-solid);
+    color: var(--color-primary-fg);
   }
   :focus-visible {
     outline: 2px solid var(--color-primary);
@@ -168,8 +318,52 @@
     }
   }
 
+  /* Home hero (pages/HomePage.tsx): soft indigo glow behind the two-column hero (tokens follow the theme). */
+  .home-hero {
+    position: relative;
+    overflow: hidden;
+    background:
+      radial-gradient(720px 480px at 78% 30%, var(--color-hero-glow), transparent 65%),
+      radial-gradient(560px 420px at 8% 12%, var(--color-hero-glow-2), transparent 60%),
+      linear-gradient(180deg, var(--color-hero-top) 0%, var(--color-bg) 100%);
+  }
+  /* "paid AI agent": brand colour only (no marker underline, as in the reference design). */
+  .home-hero-hl {
+    white-space: nowrap;
+    color: var(--color-primary);
+  }
+  /* The illustration has a white background: multiply it into the page in light, frame it on the
+     light brand tile in dark. In light the art is also feathered at its edges: content touches the right
+     edge (plant, pale blue disc) and the near-white border is a shade off the page wash, which would
+     otherwise draw a faint rectangle. The mask only reads alpha, so `black` here is not a colour. */
+  .home-hero-art {
+    background: var(--color-brand-tile);
+  }
+  .home-hero-art img {
+    mix-blend-mode: multiply;
+    mask-image:
+      linear-gradient(to right, transparent, black 2%, black 95%, transparent),
+      linear-gradient(to bottom, transparent, black 3%, black 96%, transparent);
+    mask-composite: intersect;
+  }
+  [data-theme="dark"] .home-hero-art {
+    border: 1px solid color-mix(in srgb, var(--color-text) 12%, transparent);
+    box-shadow:
+      var(--shadow-lift),
+      0 0 90px color-mix(in srgb, var(--color-primary-solid) 14%, transparent);
+  }
+  [data-theme="dark"] .home-hero-art img {
+    mix-blend-mode: normal;
+    mask-image: none;
+  }
+
   .skeleton-shimmer {
-    background: linear-gradient(90deg, #f1f5f9 0px, #e2e8f0 120px, #f1f5f9 240px);
+    background: linear-gradient(
+      90deg,
+      var(--color-mist) 0px,
+      var(--color-border) 120px,
+      var(--color-mist) 240px
+    );
     background-size: 800px 100%;
     animation: var(--animate-shimmer);
   }
@@ -229,13 +423,14 @@
   .prose-answer code {
     font-family: var(--font-mono);
     font-size: 0.88em;
-    background: #f1f5f9;
+    background: var(--color-mist);
     border-radius: 6px;
     padding: 0.1em 0.35em;
   }
   .prose-answer pre {
-    background: #0f172a;
-    color: #e2e8f0;
+    background: var(--color-code-bg);
+    border: 1px solid var(--color-border);
+    color: var(--color-code-fg);
     border-radius: 10px;
     padding: 12px 14px;
     overflow-x: auto;
@@ -269,7 +464,7 @@
     word-break: normal;
   }
   .prose-answer th {
-    background: #f8fafc;
+    background: var(--color-sunken);
     font-weight: 600;
   }
   .prose-answer hr {

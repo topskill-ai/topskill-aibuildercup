@@ -211,7 +211,7 @@ export function IdentityStep({
               <RecordFieldsEditor value={records.fields} onChange={(fields) => onRecords({ ...records, fields })} />
             ) : null}
             {errors.records ? (
-              <p className="text-[13px] text-danger" data-step-error tabIndex={-1}>
+              <p className="text-[13px] text-danger-text" data-step-error tabIndex={-1}>
                 {errors.records}
               </p>
             ) : null}

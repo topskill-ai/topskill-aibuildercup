@@ -109,7 +109,7 @@ export default function AgentDetailPage() {
             <Button
               variant={agent.config_dirty ? "primary" : "outline"}
               icon={<Rocket className="h-4 w-4" />}
-              className={cn(agent.config_dirty && "ring-2 ring-primary/30 ring-offset-2")}
+              className={cn(agent.config_dirty && "ring-2 ring-primary/30 ring-offset-2 ring-offset-bg")}
               onClick={() => setUpdateOpen(true)}
             >
               Update version
@@ -118,7 +118,7 @@ export default function AgentDetailPage() {
         }
       />
       {agent.config_dirty ? (
-        <div className="mb-4 rounded-card border border-warning/30 bg-warning-soft px-4 py-2.5 text-sm text-warning">
+        <div className="mb-4 rounded-card border border-warning/30 bg-warning-soft px-4 py-2.5 text-sm text-warning-text">
           Runtime changes are saved but not live yet. Update the version to apply them.
         </div>
       ) : null}

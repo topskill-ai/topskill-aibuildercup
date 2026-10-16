@@ -113,8 +113,8 @@ export function RecordFieldsEditor({
                 />
                 <span className="truncate text-sm font-medium">{f.label || `Field ${i + 1}`}</span>
                 <span className="shrink-0 text-xs text-subtle">{FIELD_TYPE_LABELS[f.type]}</span>
-                {f.required ? <span className="shrink-0 text-xs text-warning">required</span> : null}
-                {f.pii ? <span className="shrink-0 text-xs text-danger">personal data</span> : null}
+                {f.required ? <span className="shrink-0 text-xs text-warning-text">required</span> : null}
+                {f.pii ? <span className="shrink-0 text-xs text-danger-text">personal data</span> : null}
               </button>
               <Button
                 variant="ghost"
@@ -226,7 +226,7 @@ export function RecordFieldsEditor({
         );
       })}
       {problems.length > 0 ? (
-        <ul className="list-disc space-y-0.5 pl-5 text-[13px] text-danger">
+        <ul className="list-disc space-y-0.5 pl-5 text-[13px] text-danger-text">
           {problems.slice(0, 4).map((p) => (
             <li key={p}>{p}</li>
           ))}

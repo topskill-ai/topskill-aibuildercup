@@ -1,17 +1,39 @@
 import { Outlet, ScrollRestoration } from "react-router";
 import { Toaster } from "sonner";
 import { useMeta } from "@/api/meta";
+import { useTheme } from "@/lib/theme";
 import { LoginDialogProvider } from "../LoginDialog";
+import { LogoMark } from "./LogoMark";
 import { TopNav } from "./TopNav";
 
 function Footer() {
   return (
     <footer className="mt-auto border-t border-border bg-surface">
-      <div className="page-container flex flex-col gap-1 py-6 text-[13px] text-subtle sm:flex-row sm:items-center sm:justify-between">
-        <span>TopSkill · Expert skills as paid AI agents for people and agents.</span>
-        <span>Built with Gemini, ADK and A2A on Google Cloud. Credits are simulated.</span>
+      <div className="page-container flex flex-col gap-2 py-6 sm:flex-row sm:items-center sm:justify-between sm:gap-5">
+        <span className="flex items-center gap-2.5 text-[13px] text-muted">
+          <LogoMark size={20} className="opacity-85 dark:opacity-100" />
+          TopSkill · Expert skills as paid AI agents for people and agents.
+        </span>
+        <span className="text-[12.5px] text-subtle">Built with Gemini, ADK and A2A on Google Cloud. Credits are simulated.</span>
       </div>
     </footer>
+  );
+}
+
+/** Toasts follow the theme; isolated so a theme change re-renders only this, not the whole shell. */
+function ThemedToaster() {
+  const { theme } = useTheme();
+  return (
+    // Below the 64 px top bar so a toast never covers the navigation.
+    <Toaster
+      position="top-center"
+      offset={{ top: 64 }}
+      mobileOffset={{ top: 60 }}
+      theme={theme}
+      richColors
+      closeButton
+      toastOptions={{ className: "font-sans" }}
+    />
   );
 }
 
@@ -36,15 +58,7 @@ export function AppShell() {
         </main>
         <Footer />
       </div>
-      {/* Below the 53 px top bar so a toast never covers the navigation. */}
-      <Toaster
-        position="top-center"
-        offset={{ top: 64 }}
-        mobileOffset={{ top: 60 }}
-        richColors
-        closeButton
-        toastOptions={{ className: "font-sans" }}
-      />
+      <ThemedToaster />
       <ScrollRestoration />
     </LoginDialogProvider>
   );

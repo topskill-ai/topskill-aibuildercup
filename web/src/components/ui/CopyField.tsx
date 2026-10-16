@@ -55,7 +55,7 @@ export function CopyField({ value, label, mono = true, className }: CopyFieldPro
   return (
     <div className={cn("min-w-0", className)}>
       {label ? <div className="mb-1.5 text-sm font-medium text-text">{label}</div> : null}
-      <div className="flex min-w-0 items-stretch rounded-control border border-border bg-slate-50">
+      <div className="flex min-w-0 items-stretch rounded-control border border-border bg-sunken">
         <input
           readOnly
           value={value}
@@ -70,9 +70,9 @@ export function CopyField({ value, label, mono = true, className }: CopyFieldPro
           type="button"
           onClick={onCopy}
           aria-label={copied ? "Copied" : `Copy ${label ?? "value"}`}
-          className="flex shrink-0 items-center gap-1.5 border-l border-border px-3 text-sm font-medium text-muted hover:bg-slate-100 hover:text-text"
+          className="flex shrink-0 items-center gap-1.5 border-l border-border px-3 text-sm font-medium text-muted hover:bg-mist hover:text-text"
         >
-          {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+          {copied ? <Check className="h-4 w-4 text-success-text" /> : <Copy className="h-4 w-4" />}
           <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
         </button>
       </div>

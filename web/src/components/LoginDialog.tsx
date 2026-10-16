@@ -102,7 +102,7 @@ export function LoginForm({ onSuccess, initialMode = "sign_in", className }: Log
 
   return (
     <div className={cn("min-w-0", className)}>
-      <div role="tablist" aria-label="Sign in or create an account" className="mb-5 grid grid-cols-2 rounded-control bg-slate-100 p-1">
+      <div role="tablist" aria-label="Sign in or create an account" className="mb-5 grid grid-cols-2 rounded-control bg-mist p-1">
         {(
           [
             ["sign_in", "Sign in"],
@@ -204,7 +204,7 @@ export function LoginForm({ onSuccess, initialMode = "sign_in", className }: Log
 
       {auth.devAuthEnabled ? (
         <form onSubmit={onDevSubmit} className="mt-6 rounded-card border border-dashed border-warning/50 bg-warning-soft/60 p-4">
-          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-warning">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-warning-text">
             <Code2 aria-hidden className="h-4 w-4" />
             Developer login
           </div>

@@ -37,11 +37,11 @@ import { discoverSeenBefore, summarizeTurn, tidyPreview, type CallItem, type Dis
 type NodeTone = "primary" | "success" | "danger" | "warning" | "neutral";
 
 const NODE_TONES: Record<NodeTone, string> = {
-  primary: "bg-primary text-white",
-  success: "bg-success text-white",
-  danger: "bg-danger text-white",
-  warning: "bg-warning text-white",
-  neutral: "bg-slate-200 text-muted",
+  primary: "bg-primary-solid text-primary-fg",
+  success: "bg-success-solid text-on-accent",
+  danger: "bg-danger text-on-accent",
+  warning: "bg-warning-solid text-on-accent",
+  neutral: "bg-border text-muted",
 };
 
 function Node({ icon, tone, pulse, children }: { icon: ReactNode; tone: NodeTone; pulse?: boolean; children: ReactNode }) {
@@ -141,7 +141,7 @@ function DiscoverNode({ item, seenBefore }: { item: DiscoverItem; seenBefore: Re
 
 const CALL_STYLE: Record<CallItem["status"], { tone: NodeTone; card: string }> = {
   pending: { tone: "primary", card: "border-primary/30" },
-  running: { tone: "primary", card: "border-primary/40 shadow-[0_0_0_4px_rgba(79,70,229,0.06)]" },
+  running: { tone: "primary", card: "border-primary/40 ring-4 ring-primary-soft" },
   completed: { tone: "success", card: "border-success/30" },
   rejected: { tone: "danger", card: "border-danger/40 bg-danger-soft/40" },
   failed: { tone: "danger", card: "border-danger/30" },
@@ -170,7 +170,7 @@ function CallStatusLine({ item }: { item: CallItem }) {
     case "completed":
       return (
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-          <span className="flex items-center gap-1.5 font-semibold text-success">
+          <span className="flex items-center gap-1.5 font-semibold text-success-text">
             <CheckCircle2 aria-hidden className="h-4 w-4" /> Completed
           </span>
           <span className="text-subtle">·</span>
@@ -189,14 +189,14 @@ function CallStatusLine({ item }: { item: CallItem }) {
       return (
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm" data-testid="call-rejection">
-            <span className="flex items-center gap-1.5 font-semibold text-danger">
+            <span className="flex items-center gap-1.5 font-semibold text-danger-text">
               {item.status === "rejected" ? <Ban aria-hidden className="h-4 w-4" /> : <XCircle aria-hidden className="h-4 w-4" />}
               {item.status === "rejected" ? "Rejected" : "Failed"}
             </span>
             {item.errorCode ? (
               <>
                 <span className="text-subtle">·</span>
-                <code className="rounded-[6px] bg-danger-soft px-1.5 py-0.5 font-mono text-xs text-danger">{item.errorCode}</code>
+                <code className="rounded-[6px] bg-danger-soft px-1.5 py-0.5 font-mono text-xs text-danger-text">{item.errorCode}</code>
               </>
             ) : null}
             <span className="text-subtle">·</span>
@@ -213,7 +213,7 @@ function CallStatusLine({ item }: { item: CallItem }) {
       );
     default:
       return (
-        <div className="flex items-center gap-1.5 text-sm text-warning">
+        <div className="flex items-center gap-1.5 text-sm text-warning-text">
           <CircleHelp aria-hidden className="h-4 w-4" /> Result unknown — the connection ended first. Check the wallet ledger.
         </div>
       );
@@ -298,7 +298,7 @@ function CallNode({ item }: { item: CallItem }) {
                 {open ? "Hide answer" : `Show ${name}’s answer`}
               </button>
               {open ? (
-                <div className="mt-2 rounded-control bg-slate-50 p-3 text-sm">
+                <div className="mt-2 rounded-control bg-sunken p-3 text-sm">
                   <Markdown text={item.answerPreview} />
                 </div>
               ) : null}
@@ -306,11 +306,11 @@ function CallNode({ item }: { item: CallItem }) {
           ) : null}
         </div>
         {item.callId === null && (item.status === "rejected" || !item.sent) ? (
-          <div className="border-t border-border/70 bg-slate-50/70 px-4 py-1.5 text-2xs text-subtle">
+          <div className="border-t border-border/70 bg-sunken px-4 py-1.5 text-2xs text-subtle">
             Stopped by the pre-flight check — no request was sent to the agent.
           </div>
         ) : item.endpoint ? (
-          <div className="truncate border-t border-border/70 bg-slate-50/70 px-4 py-1.5 font-mono text-2xs text-subtle" title={item.endpoint}>
+          <div className="truncate border-t border-border/70 bg-sunken px-4 py-1.5 font-mono text-2xs text-subtle" title={item.endpoint}>
             JSON-RPC SendMessage → {item.endpoint}
           </div>
         ) : null}
@@ -344,9 +344,9 @@ function TurnSummaryBar({ turn }: { turn: Turn }) {
   if (s.calls === 0 && s.discovered === 0) return null;
   const parts: ReactNode[] = [];
   if (s.discovered) parts.push(<span key="d">{s.discovered} discovered</span>);
-  if (s.completed) parts.push(<span key="c" className="text-success">{s.completed} paid</span>);
-  if (s.rejected) parts.push(<span key="r" className="text-danger">{s.rejected} rejected</span>);
-  if (s.failed) parts.push(<span key="f" className="text-danger">{s.failed} failed</span>);
+  if (s.completed) parts.push(<span key="c" className="text-success-text">{s.completed} paid</span>);
+  if (s.rejected) parts.push(<span key="r" className="text-danger-text">{s.rejected} rejected</span>);
+  if (s.failed) parts.push(<span key="f" className="text-danger-text">{s.failed} failed</span>);
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-control border border-border bg-surface px-3 py-2 text-[13px] text-muted">
       {parts.map((p, i) => (
@@ -380,7 +380,7 @@ export function TurnView({ turn, onReauthorise }: TurnViewProps) {
   return (
     <section aria-label="Assistant turn" className="space-y-4">
       <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-card rounded-br-[4px] bg-primary px-4 py-2.5 text-[15px] text-primary-fg whitespace-pre-wrap break-words">
+        <div className="max-w-[85%] rounded-card rounded-br-[4px] bg-primary-solid px-4 py-2.5 text-[15px] text-primary-fg whitespace-pre-wrap break-words">
           {turn.userText}
         </div>
       </div>
@@ -406,7 +406,7 @@ export function TurnView({ turn, onReauthorise }: TurnViewProps) {
       {turn.answer ? (
         <div className="rounded-card border border-border bg-surface">
           <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 text-white">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-brand-from to-brand-to text-primary-fg">
               <Bot aria-hidden className="h-3.5 w-3.5" />
             </span>
             <span className="text-sm font-semibold">Enterprise Assistant</span>

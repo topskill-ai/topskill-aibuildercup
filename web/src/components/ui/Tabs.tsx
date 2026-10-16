@@ -68,7 +68,7 @@ export function Tabs<V extends string>({ items, value, onValueChange, className,
             >
               {item.label}
               {item.badge != null ? (
-                <span className="rounded-chip bg-slate-100 px-1.5 text-xs leading-5 text-muted">{item.badge}</span>
+                <span className="rounded-chip bg-mist px-1.5 text-xs leading-5 text-muted">{item.badge}</span>
               ) : null}
             </button>
           );

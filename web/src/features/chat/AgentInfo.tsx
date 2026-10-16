@@ -105,7 +105,7 @@ export function ColdStart({
     <div className="min-w-0" data-testid="cold-start">
       <div className="flex min-w-0 gap-3">
         <Avatar src={agent.avatar_url} name={agent.title} accent={agent.accent_color} size={36} />
-        <div className="min-w-0 flex-1 rounded-card rounded-tl-[4px] bg-slate-50 px-4 py-3">
+        <div className="min-w-0 flex-1 rounded-card rounded-tl-[4px] bg-sunken px-4 py-3">
           <Markdown text={agent.greeting || `Hi, I'm ${agent.title}. How can I help?`} />
         </div>
       </div>

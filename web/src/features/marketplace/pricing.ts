@@ -12,11 +12,20 @@ export interface PriceInfo {
   free_rounds: number;
 }
 
+/**
+ * Card chip split into the amount and its unit: `{amount: "Free", unit: ""}`,
+ * `{amount: "1.00", unit: " / round"}`, `{amount: "1.00", unit: " / round · 2 free"}`.
+ */
+export function priceChipParts(p: PriceInfo): { amount: string; unit: string } {
+  if (p.mode === "free" || p.price_cents <= 0) return { amount: "Free", unit: "" };
+  const unit = p.free_rounds > 0 ? ` / round · ${p.free_rounds} free` : " / round";
+  return { amount: formatCredits(p.price_cents), unit };
+}
+
 /** Card chip: `"Free"`, `"1.00 / round"`, `"1.00 / round · 2 free"`. */
 export function priceChipLabel(p: PriceInfo): string {
-  if (p.mode === "free" || p.price_cents <= 0) return "Free";
-  const base = `${formatCredits(p.price_cents)} / round`;
-  return p.free_rounds > 0 ? `${base} · ${p.free_rounds} free` : base;
+  const { amount, unit } = priceChipParts(p);
+  return amount + unit;
 }
 
 /** Sentence for the info panel: `"1.00 credits per round, first 2 rounds free."`. */

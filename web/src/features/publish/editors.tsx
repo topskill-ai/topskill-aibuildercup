@@ -61,7 +61,7 @@ export function StarterQuestionsEditor({
               </Button>
             </div>
             {errors[`starter_questions.${i}`] ? (
-              <p className="mt-1.5 text-[13px] text-danger">{errors[`starter_questions.${i}`]}</p>
+              <p className="mt-1.5 text-[13px] text-danger-text">{errors[`starter_questions.${i}`]}</p>
             ) : null}
           </div>
         ))}
@@ -142,7 +142,7 @@ export function CapabilitiesEditor({
               />
             </div>
             {errors[`capabilities.${i}`] ? (
-              <p className="mt-1.5 text-[13px] text-danger">{errors[`capabilities.${i}`]}</p>
+              <p className="mt-1.5 text-[13px] text-danger-text">{errors[`capabilities.${i}`]}</p>
             ) : null}
           </div>
         ))}
@@ -188,7 +188,7 @@ export function AccentPicker({
               disabled={disabled}
               onClick={() => onChange(c)}
               className={cn(
-                "flex h-9 w-9 items-center justify-center rounded-full text-white ring-offset-2 transition-shadow",
+                "flex h-9 w-9 items-center justify-center rounded-full text-on-accent ring-offset-2 ring-offset-surface transition-shadow",
                 accentClasses(c).solid,
                 selected ? cn("ring-2", accentClasses(c).ring) : "hover:ring-2 hover:ring-border-strong",
               )}

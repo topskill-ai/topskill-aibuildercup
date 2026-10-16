@@ -116,7 +116,7 @@ function MandateRow({ mandate, now }: { mandate: Mandate; now: number }) {
         </div>
       </div>
       {open ? (
-        <div className="border-t border-border bg-slate-50/60 px-5 py-2">
+        <div className="border-t border-border bg-sunken px-5 py-2">
           <A2ACallList mandateId={mandate.id} />
         </div>
       ) : null}

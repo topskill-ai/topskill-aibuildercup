@@ -36,13 +36,13 @@ export function BillingHint({
       <div
         className={cn(
           "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[13px]",
-          hint.tone === "warning" ? "text-warning" : "text-muted",
+          hint.tone === "warning" ? "text-warning-text" : "text-muted",
           loading && signedIn && !status && "animate-pulse",
         )}
         data-testid="billing-hint"
         aria-busy={(loading && signedIn && !status) || undefined}
       >
-        <Icon aria-hidden className={cn("h-3.5 w-3.5 shrink-0", hint.tone === "success" && "text-success")} />
+        <Icon aria-hidden className={cn("h-3.5 w-3.5 shrink-0", hint.tone === "success" && "text-success-text")} />
         <span className="min-w-0">{hint.text}</span>
         {hint.topUp ? (
           <button type="button" onClick={onTopUp} className="font-medium text-primary hover:underline">
@@ -75,7 +75,7 @@ export function UnavailableState({ error, className }: { error?: unknown; classN
       )}
       data-testid="agent-unavailable"
     >
-      <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-muted">
+      <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-mist text-muted">
         <CircleSlash aria-hidden className="h-5 w-5" />
       </div>
       <h2 className="text-lg font-semibold">This agent is temporarily unavailable</h2>

@@ -20,7 +20,7 @@ export function GuardSummaryCard({ agents, className }: { agents: AgentSummary[]
       <CardHeader
         title={
           <span className="inline-flex items-center gap-2">
-            <ShieldCheck aria-hidden className="h-4 w-4 text-success" />
+            <ShieldCheck aria-hidden className="h-4 w-4 text-success-text" />
             Safety screening
           </span>
         }

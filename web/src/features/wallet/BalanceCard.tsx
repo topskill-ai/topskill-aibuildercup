@@ -23,19 +23,19 @@ export function BalanceCard() {
   return (
     <section
       aria-label="Balance"
-      className="relative overflow-clip rounded-card bg-gradient-to-br from-indigo-600 via-indigo-600 to-violet-600 p-6 text-white sm:p-7"
+      className="relative overflow-clip rounded-card bg-gradient-to-br from-brand-from via-brand-from to-brand-to p-6 text-primary-fg sm:p-7"
     >
-      <div aria-hidden className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-white/10 blur-2xl" />
-      <div aria-hidden className="pointer-events-none absolute -bottom-24 left-1/3 h-56 w-56 rounded-full bg-violet-400/20 blur-2xl" />
+      <div aria-hidden className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-primary-fg/10 blur-2xl" />
+      <div aria-hidden className="pointer-events-none absolute -bottom-24 left-1/3 h-56 w-56 rounded-full bg-accent-violet/20 blur-2xl" />
       <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-sm font-medium text-indigo-100">
+          <div className="flex items-center gap-2 text-sm font-medium text-primary-fg">
             <Coins aria-hidden className="h-4 w-4" />
             Available balance
           </div>
           <div className="mt-2 flex items-baseline gap-2" data-testid="wallet-balance">
             {wallet.isPending ? (
-              <Skeleton className="h-11 w-48 bg-white/20 [background-image:none]" />
+              <Skeleton className="h-11 w-48 bg-primary-fg/20 [background-image:none]" />
             ) : wallet.isError ? (
               <span className="text-2xl font-semibold">—</span>
             ) : (
@@ -43,11 +43,11 @@ export function BalanceCard() {
                 <span className="font-mono text-4xl font-semibold tracking-tight tabular-nums sm:text-5xl">
                   {formatCredits(wallet.data.balance_cents)}
                 </span>
-                <span className="text-base font-medium text-indigo-100">credits</span>
+                <span className="text-base font-medium text-primary-fg">credits</span>
               </>
             )}
           </div>
-          <p className="mt-2 text-[13px] text-indigo-100/90">
+          <p className="mt-2 text-[13px] text-primary-fg">
             Simulated credits for the demo. Agents charge per round; A2A calls are paid from budgets you authorise.
           </p>
         </div>
@@ -56,7 +56,7 @@ export function BalanceCard() {
             onClick={onTopup}
             loading={topup.isPending}
             disabled={topupCents === undefined}
-            variant="secondary"
+            variant="inverse"
             size="lg"
             icon={<Plus aria-hidden className="h-4 w-4" />}
             data-testid="demo-topup"
@@ -64,7 +64,7 @@ export function BalanceCard() {
             {topupCents === undefined ? "Add demo credits" : `Add ${formatCredits(topupCents)} demo credits`}
           </Button>
           {meta.data ? (
-            <span className="flex items-center gap-1 text-xs text-indigo-100/90">
+            <span className="flex items-center gap-1 text-xs text-primary-fg">
               <Sparkles aria-hidden className="h-3 w-3" />
               Up to {meta.data.demo_topup_daily_limit} top-ups per day
             </span>
@@ -72,7 +72,7 @@ export function BalanceCard() {
         </div>
       </div>
       {wallet.isError ? (
-        <div className="relative mt-4 rounded-control bg-white p-3">
+        <div className="relative mt-4 rounded-control bg-surface p-3">
           <ErrorLine error={wallet.error} onRetry={() => void wallet.refetch()} />
         </div>
       ) : null}

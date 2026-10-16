@@ -26,7 +26,7 @@ export function AgentsTable({ agents }: { agents: AgentSummary[] }) {
       <div className="hidden overflow-x-auto sm:block">
         <table className="w-full min-w-[640px] text-sm">
           <thead>
-            <tr className="border-y border-border bg-slate-50 text-left text-xs font-medium text-muted">
+            <tr className="border-y border-border bg-sunken text-left text-xs font-medium text-muted">
               <th className="px-5 py-2.5 font-medium">Agent</th>
               <th className="px-3 py-2.5 font-medium">Status</th>
               <th className="px-3 py-2.5 font-medium">Price</th>
@@ -37,7 +37,7 @@ export function AgentsTable({ agents }: { agents: AgentSummary[] }) {
           </thead>
           <tbody className="divide-y divide-border">
             {agents.map((a) => (
-              <tr key={a.id} className="group hover:bg-slate-50">
+              <tr key={a.id} className="group hover:bg-sunken">
                 <td className="px-5 py-3">
                   <Link to={`/studio/agents/${a.id}`} className="flex min-w-0 items-center gap-3">
                     <Avatar src={a.avatar_url} name={a.title} accent={a.accent_color} size={32} />

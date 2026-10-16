@@ -32,7 +32,7 @@ function ChannelBar({ visitorCents, a2aCents }: { visitorCents: number; a2aCents
   return (
     <div>
       <div
-        className="flex h-3 overflow-hidden rounded-chip bg-slate-100"
+        className="flex h-3 overflow-hidden rounded-chip bg-mist"
         role="img"
         aria-label={`Visitors ${s.visitorPct}%, A2A ${s.a2aPct}%`}
       >

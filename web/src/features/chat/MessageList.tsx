@@ -15,7 +15,7 @@ function UserBubble({ m }: { m: ViewMessage }) {
   const spoken = m.turn_id.startsWith("voice_");
   return (
     <div className="flex flex-col items-end">
-      <div className="max-w-[85%] min-w-0 rounded-card rounded-br-[4px] bg-primary px-4 py-2.5 text-[15px] whitespace-pre-wrap text-primary-fg [overflow-wrap:anywhere]">
+      <div className="max-w-[85%] min-w-0 rounded-card rounded-br-[4px] bg-primary-solid px-4 py-2.5 text-[15px] whitespace-pre-wrap text-primary-fg [overflow-wrap:anywhere]">
         {spoken ? (
           <Mic aria-label="Spoken" className="mr-1.5 -mt-0.5 inline h-3.5 w-3.5 opacity-80" data-testid="voice-marker" />
         ) : null}

@@ -18,7 +18,7 @@ function webDomain(c: Citation): string {
 
 const chip =
   "inline-flex max-w-full items-center gap-1.5 rounded-chip border border-border bg-surface px-2.5 py-1 text-[13px] " +
-  "text-text transition-colors duration-150 hover:border-border-strong hover:bg-slate-50";
+  "text-text transition-colors duration-150 hover:border-border-strong hover:bg-sunken";
 
 function Num({ n }: { n: number }) {
   return (
@@ -124,7 +124,7 @@ export function CitationList({
       {opened ? (
         <blockquote
           id={snippetId}
-          className="mt-2 rounded-control border-l-2 border-primary bg-slate-50 px-3 py-2 text-[13px] leading-5 text-muted"
+          className="mt-2 rounded-control border-l-2 border-primary bg-sunken px-3 py-2 text-[13px] leading-5 text-muted"
           data-testid="citation-snippet"
         >
           <span className="mb-0.5 block text-xs font-medium text-subtle">

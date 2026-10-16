@@ -60,7 +60,7 @@ export function ShareTab({ agent }: { agent: Agent }) {
         <CardBody>
           <CopyField label="Web URL" value={agent.urls.public_page} />
           {agent.status !== "active" ? (
-            <p className="mt-2 text-[13px] text-warning">The agent is paused, so the page shows it as unavailable.</p>
+            <p className="mt-2 text-[13px] text-warning-text">The agent is paused, so the page shows it as unavailable.</p>
           ) : null}
         </CardBody>
       </Card>
@@ -101,7 +101,7 @@ export function ShareTab({ agent }: { agent: Agent }) {
                   onRetry={() => void card.refetch()}
                 />
               ) : (
-                <pre className="max-h-96 overflow-auto rounded-control bg-slate-900 p-4 font-mono text-xs leading-5 text-slate-100">
+                <pre className="max-h-96 overflow-auto rounded-control border border-border bg-code-bg p-4 font-mono text-xs leading-5 text-code-fg">
                   {JSON.stringify(card.data, null, 2)}
                 </pre>
               )}
@@ -113,7 +113,7 @@ export function ShareTab({ agent }: { agent: Agent }) {
               description="Get a mandate token from POST /api/mandates while signed in, then send a message."
             />
             <CardBody>
-              <pre className="overflow-auto rounded-control bg-slate-900 p-4 font-mono text-xs leading-5 whitespace-pre text-slate-100">
+              <pre className="overflow-auto rounded-control border border-border bg-code-bg p-4 font-mono text-xs leading-5 whitespace-pre text-code-fg">
                 {curlExample(agent)}
               </pre>
             </CardBody>

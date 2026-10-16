@@ -207,7 +207,7 @@ export function RecordsTab({ agent, onOpenSettings }: { agent: Agent; onOpenSett
             <div className="hidden overflow-x-auto sm:block">
               <table className="w-full text-sm" data-testid="records-table">
                 <thead>
-                  <tr className="border-b border-border bg-slate-50 text-left text-xs text-muted">
+                  <tr className="border-b border-border bg-sunken text-left text-xs text-muted">
                     <th className="w-10 px-4 py-2.5">
                       <input
                         type="checkbox"
@@ -233,7 +233,7 @@ export function RecordsTab({ agent, onOpenSettings }: { agent: Agent; onOpenSett
                   {rows.map((r) => (
                     <tr
                       key={r.id}
-                      className={cn("cursor-pointer hover:bg-slate-50", selected.has(r.id) && "bg-primary-soft/40")}
+                      className={cn("cursor-pointer hover:bg-sunken", selected.has(r.id) && "bg-primary-soft/40")}
                       onClick={() => open(r)}
                     >
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -335,7 +335,7 @@ export function RecordsTab({ agent, onOpenSettings }: { agent: Agent; onOpenSett
           </>
         }
       >
-        <div className="flex items-start gap-3 rounded-control bg-warning-soft p-3 text-sm text-warning">
+        <div className="flex items-start gap-3 rounded-control bg-warning-soft p-3 text-sm text-warning-text">
           <ShieldAlert aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
             Personal data fields: {piiLabels.length > 0 ? piiLabels.join(", ") : "values marked as personal data"}

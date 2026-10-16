@@ -59,13 +59,13 @@ export function BudgetBar({ spentCents, budgetCents, size = "sm", inactive, clas
         aria-valuemax={budgetCents}
         aria-valuenow={spentCents}
         aria-valuetext={`${formatCredits(spentCents)} of ${formatCredits(budgetCents)} credits spent`}
-        className={cn("w-full overflow-hidden rounded-chip bg-slate-100", size === "lg" ? "h-3" : "h-1.5")}
+        className={cn("w-full overflow-hidden rounded-chip bg-mist", size === "lg" ? "h-3" : "h-1.5")}
       >
         <div
           className={cn(
             "h-full rounded-chip transition-[width] duration-700 ease-out",
-            inactive ? "bg-slate-300" : tone,
-            delta && !inactive && "shadow-[0_0_0_3px_rgba(79,70,229,0.18)]",
+            inactive ? "bg-border-strong" : tone,
+            delta && !inactive && "ring-3 ring-primary/20",
           )}
           style={{ width: `${pct}%` }}
         />

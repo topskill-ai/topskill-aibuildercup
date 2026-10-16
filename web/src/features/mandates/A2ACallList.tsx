@@ -10,8 +10,8 @@ import { useAgentLook } from "./agentLook";
 import { isMissingEndpoint, useMandateCalls } from "./api";
 
 function StatusIcon({ status }: { status: A2ACall["status"] }) {
-  if (status === "completed") return <CheckCircle2 aria-label="Completed" className="h-4 w-4 text-success" />;
-  if (status === "failed") return <XCircle aria-label="Failed" className="h-4 w-4 text-danger" />;
+  if (status === "completed") return <CheckCircle2 aria-label="Completed" className="h-4 w-4 text-success-text" />;
+  if (status === "failed") return <XCircle aria-label="Failed" className="h-4 w-4 text-danger-text" />;
   return <Loader2 aria-label="Running" className="h-4 w-4 animate-spin text-primary" />;
 }
 

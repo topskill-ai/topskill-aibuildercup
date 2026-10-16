@@ -31,9 +31,9 @@ function StatusIcon({ status }: { status: ToolLine["status"] }) {
     case "running":
       return <Spinner size={12} label="Running" />;
     case "completed":
-      return <Check aria-label="Completed" className="h-3.5 w-3.5 text-success" />;
+      return <Check aria-label="Completed" className="h-3.5 w-3.5 text-success-text" />;
     case "error":
-      return <X aria-label="Failed" className="h-3.5 w-3.5 text-danger" />;
+      return <X aria-label="Failed" className="h-3.5 w-3.5 text-danger-text" />;
     case "interrupted":
       return <CircleSlash aria-label="Interrupted" className="h-3.5 w-3.5 text-subtle" />;
   }
@@ -56,7 +56,7 @@ export function ToolActivity({ tools, className }: { tools: ToolLine[]; classNam
         aria-expanded={open}
         aria-controls={listId}
         onClick={() => setOpen((o) => !o)}
-        className="flex max-w-full items-center gap-1.5 rounded-chip bg-slate-100 px-2.5 py-1 text-left hover:bg-slate-200/70"
+        className="flex max-w-full items-center gap-1.5 rounded-chip bg-mist px-2.5 py-1 text-left hover:bg-border"
       >
         {running ? <Spinner size={12} label="Working" /> : <Wrench aria-hidden className="h-3.5 w-3.5 shrink-0" />}
         <span className="min-w-0 truncate">{summary}</span>

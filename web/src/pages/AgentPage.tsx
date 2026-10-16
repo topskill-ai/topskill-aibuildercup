@@ -84,7 +84,7 @@ function AgentView({ agent }: { agent: PublicAgent }) {
 function AgentPageSkeleton() {
   return (
     <div role="status" aria-label="Loading agent">
-      <div className="border-b border-border bg-slate-50">
+      <div className="border-b border-border bg-sunken">
         <div className="page-container flex items-center gap-4 py-7">
           <Skeleton className="h-14 w-14 rounded-full" />
           <div className="flex-1 space-y-2">

@@ -19,7 +19,7 @@ export function ErrorLine({ error, message, traceId, onRetry, className }: Error
   const text = message ?? errorMessage(error);
   const trace = traceId ?? errorTraceId(error);
   return (
-    <div role="alert" className={cn("flex items-start gap-2 text-sm text-danger", className)}>
+    <div role="alert" className={cn("flex items-start gap-2 text-sm text-danger-text", className)}>
       <AlertCircle aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
       <div className="min-w-0 flex-1">
         <p className="break-words">{text}</p>

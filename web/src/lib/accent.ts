@@ -21,50 +21,41 @@ export const ACCENTS: Record<AccentColor, AccentClasses> = {
   amber: {
     solid: "bg-accent-amber",
     soft: "bg-accent-amber-soft",
-    text: "text-accent-amber",
+    text: "text-accent-amber-text",
     ring: "ring-accent-amber",
     border: "border-accent-amber",
   },
   blue: {
     solid: "bg-accent-blue",
     soft: "bg-accent-blue-soft",
-    text: "text-accent-blue",
+    text: "text-accent-blue-text",
     ring: "ring-accent-blue",
     border: "border-accent-blue",
   },
   emerald: {
     solid: "bg-accent-emerald",
     soft: "bg-accent-emerald-soft",
-    text: "text-accent-emerald",
+    text: "text-accent-emerald-text",
     ring: "ring-accent-emerald",
     border: "border-accent-emerald",
   },
   rose: {
     solid: "bg-accent-rose",
     soft: "bg-accent-rose-soft",
-    text: "text-accent-rose",
+    text: "text-accent-rose-text",
     ring: "ring-accent-rose",
     border: "border-accent-rose",
   },
   violet: {
     solid: "bg-accent-violet",
     soft: "bg-accent-violet-soft",
-    text: "text-accent-violet",
+    text: "text-accent-violet-text",
     ring: "ring-accent-violet",
     border: "border-accent-violet",
   },
 };
 
 export const ACCENT_COLORS: AccentColor[] = ["amber", "blue", "emerald", "rose", "violet"];
-
-/** Hex values, for the rare place that needs a raw color (e.g. canvas, inline SVG). */
-export const ACCENT_HEX: Record<AccentColor, string> = {
-  amber: "#F59E0B",
-  blue: "#3B82F6",
-  emerald: "#10B981",
-  rose: "#F43F5E",
-  violet: "#8B5CF6",
-};
 
 export function accentClasses(color: AccentColor | null | undefined): AccentClasses {
   return ACCENTS[color ?? "blue"] ?? ACCENTS.blue;

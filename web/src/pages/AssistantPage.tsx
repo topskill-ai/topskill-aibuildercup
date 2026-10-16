@@ -29,10 +29,10 @@ const STEPS = [
 function EmptyIntro({ onPick }: { onPick: (text: string) => void }) {
   return (
     <div className="relative overflow-clip rounded-card border border-border bg-surface p-6 sm:p-8">
-      <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-indigo-100 blur-3xl" />
-      <div aria-hidden className="pointer-events-none absolute -bottom-28 -left-16 h-64 w-64 rounded-full bg-violet-100 blur-3xl" />
+      <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-primary-soft blur-3xl" />
+      <div aria-hidden className="pointer-events-none absolute -bottom-28 -left-16 h-64 w-64 rounded-full bg-accent-violet-soft blur-3xl" />
       <div className="relative">
-        <div className="flex h-11 w-11 items-center justify-center rounded-card bg-gradient-to-br from-indigo-500 to-violet-500 text-white">
+        <div className="flex h-11 w-11 items-center justify-center rounded-card bg-gradient-to-br from-brand-from to-brand-to text-primary-fg">
           <Bot aria-hidden className="h-5 w-5" />
         </div>
         <h2 className="mt-4 text-xl font-semibold sm:text-2xl">Your company assistant can hire experts</h2>

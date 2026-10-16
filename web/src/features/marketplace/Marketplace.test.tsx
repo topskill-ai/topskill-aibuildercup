@@ -10,7 +10,7 @@ vi.mock("@/lib/firebase", () => ({ getIdToken: async () => null }));
 vi.mock("@/lib/devUser", () => ({ getDevUser: () => null }));
 
 import { Marketplace } from "./Marketplace";
-import { priceChipLabel, priceSentence } from "./pricing";
+import { priceChipLabel, priceChipParts, priceSentence } from "./pricing";
 
 const card = (over: Partial<PublicAgentCard>): PublicAgentCard => ({
   slug: "visa-advisor",
@@ -109,6 +109,11 @@ describe("pricing copy", () => {
     expect(priceChipLabel({ mode: "per_round", price_cents: 100, free_rounds: 2 })).toBe("1.00 / round · 2 free");
     expect(priceChipLabel({ mode: "per_round", price_cents: 250, free_rounds: 0 })).toBe("2.50 / round");
     expect(priceChipLabel({ mode: "free", price_cents: 0, free_rounds: 0 })).toBe("Free");
+    expect(priceChipParts({ mode: "per_round", price_cents: 100, free_rounds: 2 })).toEqual({
+      amount: "1.00",
+      unit: " / round · 2 free",
+    });
+    expect(priceChipParts({ mode: "per_round", price_cents: 0, free_rounds: 3 })).toEqual({ amount: "Free", unit: "" });
     expect(priceSentence({ mode: "per_round", price_cents: 100, free_rounds: 1 })).toBe("1.00 credits per round, first 1 round free.");
     expect(priceSentence({ mode: "per_round", price_cents: 100, free_rounds: 2 })).toBe("1.00 credits per round, first 2 rounds free.");
   });

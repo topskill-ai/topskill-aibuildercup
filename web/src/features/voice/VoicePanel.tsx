@@ -68,7 +68,7 @@ function Orb({ state, voice }: { state: VoiceState; voice: VoiceController }) {
         className={cn(
           "absolute inset-0 rounded-full transition-transform duration-100",
           !live && "opacity-40",
-          activity === "speaking" ? "bg-emerald-100" : activity === "thinking" ? "bg-amber-100" : "bg-primary-soft",
+          activity === "speaking" ? "bg-success-soft" : activity === "thinking" ? "bg-warning-soft" : "bg-primary-soft",
         )}
       />
       <span

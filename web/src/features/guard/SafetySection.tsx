@@ -52,7 +52,7 @@ export function SafetySection({ agent }: { agent: Agent }) {
       <CardHeader
         title={
           <span className="inline-flex items-center gap-2">
-            <ShieldCheck aria-hidden className="h-4 w-4 text-success" />
+            <ShieldCheck aria-hidden className="h-4 w-4 text-success-text" />
             Safety
           </span>
         }
@@ -67,7 +67,7 @@ export function SafetySection({ agent }: { agent: Agent }) {
           description="Google Cloud Model Armor checks each incoming message for prompt injection, jailbreaks and unsafe content before the model runs, and redacts sensitive data such as card numbers. Web chat answers are also screened (A2A answers are not). Blocked messages are never charged."
         />
         {enabled && agent.guard_active === false ? (
-          <p className="text-[13px] text-warning" data-testid="guard-unavailable">
+          <p className="text-[13px] text-warning-text" data-testid="guard-unavailable">
             Screening is unavailable on this deployment right now, so messages pass unscreened.
           </p>
         ) : null}

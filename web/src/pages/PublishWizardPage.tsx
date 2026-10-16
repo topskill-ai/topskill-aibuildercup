@@ -103,7 +103,7 @@ function Stepper({
               <span
                 className={cn(
                   "h-1 w-full rounded-chip transition-colors",
-                  active || done ? "bg-primary" : "bg-slate-200",
+                  active || done ? "bg-primary" : "bg-border",
                 )}
               />
               <span
@@ -381,7 +381,7 @@ export default function PublishWizardPage() {
             <div
               className={cn(
                 "inline-flex items-center gap-2 rounded-chip border px-3 py-1 text-sm font-medium",
-                finishedMs !== null ? "border-success/30 bg-success-soft text-success" : "border-border bg-surface text-muted",
+                finishedMs !== null ? "border-success/30 bg-success-soft text-success-text" : "border-border bg-surface text-muted",
               )}
               aria-live="off"
               data-testid="wizard-timer"
@@ -433,7 +433,7 @@ export default function PublishWizardPage() {
               ) : null}
               {skillUpload.error ? <ErrorLine error={skillUpload.error} /> : null}
               {problems.length > 0 ? (
-                <ul className="list-disc space-y-0.5 pl-5 text-sm text-danger" role="alert">
+                <ul className="list-disc space-y-0.5 pl-5 text-sm text-danger-text" role="alert">
                   {problems.map((p) => (
                     <li key={p}>{p}</li>
                   ))}
@@ -552,7 +552,7 @@ export default function PublishWizardPage() {
               Back
             </Button>
             <div className="flex min-w-0 items-center gap-3">
-              {errorSummary ? <span className="hidden text-[13px] text-danger sm:inline">{errorSummary}</span> : null}
+              {errorSummary ? <span className="hidden text-[13px] text-danger-text sm:inline">{errorSummary}</span> : null}
               <Button
                 variant="primary"
                 size={isLast ? "lg" : "md"}
@@ -569,7 +569,7 @@ export default function PublishWizardPage() {
             </div>
             {/* Phones: the summary wraps below the buttons instead of being hidden. */}
             {errorSummary ? (
-              <p className="w-full text-right text-[13px] text-danger sm:hidden" role="alert">
+              <p className="w-full text-right text-[13px] text-danger-text sm:hidden" role="alert">
                 {errorSummary}
               </p>
             ) : null}

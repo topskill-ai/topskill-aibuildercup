@@ -27,13 +27,13 @@ export function Switch({ checked, onCheckedChange, label, description, disabled,
       className={cn(
         "relative inline-flex h-6 w-10 shrink-0 items-center rounded-chip transition-colors duration-150 ease-out",
         "disabled:cursor-not-allowed disabled:opacity-50",
-        checked ? "bg-primary" : "bg-slate-300",
+        checked ? "bg-primary-solid" : "bg-border-strong",
       )}
     >
       <span
         aria-hidden
         className={cn(
-          "inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-150 ease-out",
+          "inline-block h-5 w-5 rounded-full bg-primary-fg shadow-sm transition-transform duration-150 ease-out",
           checked ? "translate-x-[18px]" : "translate-x-0.5",
         )}
       />

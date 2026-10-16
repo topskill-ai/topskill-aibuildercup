@@ -14,35 +14,39 @@ export function AgentCard({ agent }: { agent: PublicAgentCard }) {
     <Link
       to={`/a/${encodeURIComponent(agent.slug)}`}
       className={cn(
-        "group relative flex min-w-0 flex-col overflow-hidden rounded-card border border-border bg-surface",
-        "transition-colors duration-150 ease-out hover:border-border-strong focus-visible:outline-offset-2",
+        "group relative flex min-w-0 flex-col rounded-card border border-border bg-surface px-6 pt-6 pb-5",
+        "transition-[translate,box-shadow,border-color] duration-200 ease-out hover:-translate-y-1 hover:border-border-strong hover:shadow-lift",
+        "focus-visible:outline-offset-2",
       )}
     >
-      <span aria-hidden className={cn("h-1.5 w-full", accent.solid)} />
-      <div className="flex min-w-0 flex-1 flex-col p-5">
-        <div className="flex min-w-0 items-start gap-3">
-          <Avatar src={agent.avatar_url} name={agent.title} accent={agent.accent_color} size={48} ring />
-          <div className="min-w-0 flex-1">
-            <h3 className="truncate text-base leading-6 font-semibold group-hover:text-primary">{agent.title}</h3>
-            <p className="truncate text-[13px] text-muted">
-              by {agent.creator.name || "Unknown creator"}
-              {agent.creator.headline ? <span className="text-subtle"> · {agent.creator.headline}</span> : null}
-            </p>
-          </div>
+      {/* Accent tab hanging from the top edge. */}
+      <span aria-hidden className={cn("absolute -top-px right-[22px] left-[22px] h-[3px] rounded-b-[4px]", accent.solid)} />
+      <div className="flex min-w-0 items-center gap-3.5">
+        <Avatar src={agent.avatar_url} name={agent.title} accent={agent.accent_color} size={50} solid />
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-base leading-snug font-semibold group-hover:text-primary">{agent.title}</h3>
+          <p className="mt-0.5 truncate text-[12.5px] text-subtle">
+            by <b className="font-semibold text-muted">{agent.creator.name || "Unknown creator"}</b>
+            {agent.creator.headline ? <span> · {agent.creator.headline}</span> : null}
+          </p>
         </div>
-        <p className="mt-3 line-clamp-2 min-h-[2lh] text-sm text-muted">{agent.tagline || "No tagline yet."}</p>
-        <FeatureBadges features={agent.features} className="mt-3" />
-        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-4">
-          <PriceChip pricing={agent.pricing} accent={agent.accent_color} />
-          <span className="flex items-center gap-3 text-xs text-subtle">
+      </div>
+      <p className="mt-4 line-clamp-2 min-h-[2lh] text-[13.5px] leading-relaxed text-muted">
+        {agent.tagline || "No tagline yet."}
+      </p>
+      <FeatureBadges features={agent.features} className="mt-3.5" />
+      <div className="mt-auto pt-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-mist pt-4">
+          <PriceChip pricing={agent.pricing} accent={agent.accent_color} tone="money" />
+          <span className="flex items-center gap-3.5 text-[12.5px] font-medium text-subtle tabular-nums">
             <span className="inline-flex items-center gap-1" title="Conversations">
-              <MessageSquare aria-hidden className="h-3.5 w-3.5" />
+              <MessageSquare aria-hidden className="h-[13px] w-[13px]" />
               <span className="sr-only">Conversations:</span>
               {formatNumber(agent.stats.conversations)}
             </span>
             {agent.features.a2a ? (
               <span className="inline-flex items-center gap-1" title="A2A calls">
-                <Network aria-hidden className="h-3.5 w-3.5" />
+                <Network aria-hidden className="h-[13px] w-[13px]" />
                 <span className="sr-only">A2A calls:</span>
                 {formatNumber(agent.stats.a2a_calls)}
               </span>

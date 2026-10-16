@@ -140,7 +140,7 @@ export function SimpleChart({ data, className }: { data: ChartData; className?: 
       {activePoint && active !== null ? (
         <div
           role="status"
-          className="pointer-events-none absolute top-1 rounded-control border border-border bg-surface px-2.5 py-1.5 text-xs shadow-[0_8px_24px_rgba(15,23,42,.08)]"
+          className="pointer-events-none absolute top-1 rounded-control border border-border bg-surface px-2.5 py-1.5 text-xs shadow-pop"
           style={{ left: `${(cx(active) / W) * 100}%`, transform: "translateX(-50%)" }}
         >
           <div className="text-muted">{activePoint.label}</div>

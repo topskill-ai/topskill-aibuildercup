@@ -182,7 +182,7 @@ export function KnowledgeTab({ agent }: { agent: Agent }) {
             }}
             className={cn(
               "rounded-card border-2 border-dashed px-4 py-5 text-center text-sm text-muted transition-colors",
-              over ? "border-primary bg-primary-soft" : "border-border bg-slate-50",
+              over ? "border-primary bg-primary-soft" : "border-border bg-sunken",
             )}
           >
             Drop PDF, DOCX, TXT, MD or CSV files here (10 MB each, up to 20 per agent).
@@ -218,9 +218,9 @@ export function KnowledgeTab({ agent }: { agent: Agent }) {
                         {f.pages != null ? ` · ${f.pages} page${f.pages === 1 ? "" : "s"}` : ""} ·{" "}
                         <span className="text-subtle">{formatRelative(f.updated_at)}</span>
                       </div>
-                      {f.error ? <p className="mt-1 text-[13px] text-danger">{f.error}</p> : null}
+                      {f.error ? <p className="mt-1 text-[13px] text-danger-text">{f.error}</p> : null}
                       {f.status === "unreadable" && !f.error ? (
-                        <p className="mt-1 text-[13px] text-danger">No text could be extracted (scanned image?).</p>
+                        <p className="mt-1 text-[13px] text-danger-text">No text could be extracted (scanned image?).</p>
                       ) : null}
                     </div>
                     <Button

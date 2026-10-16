@@ -23,7 +23,7 @@ export function CategoryChips({ value, onChange }: CategoryChipsProps) {
     cn(
       "inline-flex h-8 items-center rounded-chip border px-3 text-[13px] font-medium transition-colors duration-150",
       active
-        ? "border-primary bg-primary text-primary-fg"
+        ? "border-primary-solid bg-primary-solid text-primary-fg"
         : "border-border bg-surface text-muted hover:border-border-strong hover:text-text",
     );
   return (
@@ -47,7 +47,7 @@ function Direction({ cents }: { cents: number }) {
       aria-hidden
       className={cn(
         "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
-        credit ? "bg-success-soft text-success" : "bg-slate-100 text-muted",
+        credit ? "bg-success-soft text-success-text" : "bg-mist text-muted",
       )}
     >
       {credit ? <ArrowDownLeft className="h-4 w-4" /> : <ArrowUpRight className="h-4 w-4" />}
@@ -151,7 +151,7 @@ export function LedgerTable({ category }: LedgerTableProps) {
 
   return (
     <div>
-      <div className="hidden grid-cols-[minmax(0,1fr)_150px_130px_130px] gap-4 border-b border-border bg-slate-50 px-5 py-2 text-xs font-semibold tracking-wide text-subtle uppercase sm:grid">
+      <div className="hidden grid-cols-[minmax(0,1fr)_150px_130px_130px] gap-4 border-b border-border bg-sunken px-5 py-2 text-xs font-semibold tracking-wide text-subtle uppercase sm:grid">
         <span>Transaction</span>
         <span>Category</span>
         <span className="text-right">Amount</span>

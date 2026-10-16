@@ -35,7 +35,7 @@ export function IncomeList({
             <span
               className={cn(
                 "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
-                channel === "a2a" ? "bg-accent-violet-soft text-accent-violet" : "bg-primary-soft text-primary",
+                channel === "a2a" ? "bg-accent-violet-soft text-accent-violet-text" : "bg-primary-soft text-primary",
               )}
               aria-hidden
             >

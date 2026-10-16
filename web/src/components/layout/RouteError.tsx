@@ -14,7 +14,7 @@ export function RouteError() {
   return (
     <div className="page-container flex flex-1 items-center justify-center py-16">
       <div className="w-full max-w-md rounded-card border border-border bg-surface p-6 text-center">
-        <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-danger-soft text-danger">
+        <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-danger-soft text-danger-text">
           <TriangleAlert aria-hidden className="h-5 w-5" />
         </div>
         <h1 className="text-lg font-semibold">{notFound ? "Page not found" : "Something went wrong"}</h1>

@@ -50,7 +50,7 @@ export function SkillDropzone({
       className={cn(
         "flex flex-col items-center justify-center rounded-card border-2 border-dashed text-center transition-colors",
         compact ? "px-4 py-6" : "px-6 py-12",
-        over ? "border-primary bg-primary-soft" : "border-border bg-slate-50",
+        over ? "border-primary bg-primary-soft" : "border-border bg-sunken",
         disabled && "opacity-60",
       )}
     >

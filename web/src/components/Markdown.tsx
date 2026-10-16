@@ -132,7 +132,7 @@ function MarkdownImpl({ text, citations, onCitationClick, streaming, className }
               title={label}
               aria-label={`Source ${n}: ${label}`}
               onClick={() => onCitationClick?.(citation)}
-              className="inline-flex h-4 min-w-4 items-center justify-center rounded-chip bg-primary-soft px-[3px] font-mono text-[10px] font-medium text-primary hover:bg-indigo-100"
+              className="inline-flex h-4 min-w-4 items-center justify-center rounded-chip bg-primary-soft px-[3px] font-mono text-[10px] font-medium text-primary hover:bg-primary/15"
             >
               {n}
             </button>

@@ -81,7 +81,7 @@ export function UpdateVersionDialog({
         )}
       </Field>
       {resumes ? (
-        <p className="mt-3 rounded-control border border-warning/30 bg-warning-soft px-3 py-2 text-[13px] text-warning" role="note">
+        <p className="mt-3 rounded-control border border-warning/30 bg-warning-soft px-3 py-2 text-[13px] text-warning-text" role="note">
           This also resumes the agent: visitors and AI agents can use it again.
         </p>
       ) : null}

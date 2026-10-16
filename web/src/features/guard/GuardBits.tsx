@@ -26,7 +26,7 @@ export function GuardNote({ guard, className }: { guard: GuardData; className?: 
   const Icon = blocked ? ShieldAlert : ShieldCheck;
   return (
     <p
-      className={cn("flex items-start gap-1.5 text-xs", blocked ? "text-danger" : "text-subtle", className)}
+      className={cn("flex items-start gap-1.5 text-xs", blocked ? "text-danger-text" : "text-subtle", className)}
       data-testid="guard-note"
     >
       <Icon aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />

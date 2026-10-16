@@ -88,7 +88,7 @@ export function Paywall({ open, onClose, error, pendingText, billing, billingUpd
         </>
       }
     >
-      <dl className="grid grid-cols-2 gap-3 rounded-card border border-border bg-slate-50 p-4 text-sm">
+      <dl className="grid grid-cols-2 gap-3 rounded-card border border-border bg-sunken p-4 text-sm">
         <div className="min-w-0">
           <dt className="text-muted">Next round</dt>
           <dd className="mt-0.5 font-medium">{required != null ? <Money cents={required} /> : "—"}</dd>

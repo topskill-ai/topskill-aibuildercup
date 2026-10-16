@@ -252,7 +252,7 @@ function RuntimeSection({ agent, onUpdateVersion }: { agent: Agent; onUpdateVers
       />
       <CardBody className="space-y-5">
         {agent.config_dirty ? (
-          <div className="flex items-start gap-2 rounded-control bg-warning-soft p-3 text-sm text-warning">
+          <div className="flex items-start gap-2 rounded-control bg-warning-soft p-3 text-sm text-warning-text">
             <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
             Saved changes are waiting for a new version. Visitors still talk to version {agent.active_version}.
           </div>
@@ -314,7 +314,7 @@ function RuntimeSection({ agent, onUpdateVersion }: { agent: Agent; onUpdateVers
               onChange={(record_fields) => set({ record_fields })}
             />
           ) : null}
-          {shown.records ? <p className="text-[13px] text-danger">{shown.records}</p> : null}
+          {shown.records ? <p className="text-[13px] text-danger-text">{shown.records}</p> : null}
         </div>
         <div className="text-[13px] text-muted">
           Skills: {agent.skills.map((s) => s.name).join(", ") || "—"}
@@ -423,7 +423,7 @@ function StatusSection({ agent }: { agent: Agent }) {
         {toggle.error ? <ErrorLine error={toggle.error} /> : null}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
           <div className="min-w-0">
-            <div className="text-sm font-medium text-danger">Delete agent</div>
+            <div className="text-sm font-medium text-danger-text">Delete agent</div>
             <p className="text-[13px] text-muted">The public page goes offline. Its address stays reserved.</p>
           </div>
           <Button variant="danger" icon={<Trash2 className="h-4 w-4" />} onClick={() => setConfirmDelete(true)}>
