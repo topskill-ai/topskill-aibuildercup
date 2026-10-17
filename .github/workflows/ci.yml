@@ -1,18 +1,17 @@
-# Tests only (owner decision D3: no keyless deploys from CI; deploys run from the laptop with
-# deploy/scripts/deploy_backend.sh and deploy_web.sh).
+# Tests only, on pull requests: the PR's checkout is its merge ref, i.e. main as it will be after the
+# merge, so main is not tested again. Every push to main deploys through deploy.yml (owner decision
+# D3 revised 2026-10-16). Run it by hand on any branch with workflow_dispatch.
 name: ci
 
 on:
   pull_request:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -38,7 +37,7 @@ jobs:
         run: |
           python3 -c "import json; [json.load(open(f)) for f in ('firebase.json', '.firebaserc', 'firestore.indexes.json')]"
           python3 -c "import yaml, sys; [yaml.safe_load(open(f)) for f in sys.argv[1:]]" \
-            deploy/cloudbuild.yaml deploy/env/prod.env.yaml .github/workflows/ci.yml
+            deploy/cloudbuild.yaml deploy/env/prod.env.yaml .github/workflows/*.yml
       - name: prod.env.yaml has no dev settings
         run: |
           if grep -nE '^(AUTH_DEV_BYPASS|FIRESTORE_EMULATOR_HOST|FIREBASE_AUTH_EMULATOR_HOST|MANDATE_SIGNING_KEY|GEMINI_API_KEY)\b' deploy/env/prod.env.yaml; then
@@ -47,6 +46,10 @@ jobs:
           grep -qE '^ENV: "prod"$' deploy/env/prod.env.yaml
       - name: shellcheck
         run: shellcheck -S warning deploy/scripts/*.sh
+      - name: actionlint (workflows, incl. shellcheck of run blocks)
+        run: |
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint -color
 
   backend:
     name: backend

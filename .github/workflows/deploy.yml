@@ -1,0 +1,167 @@
+# Production deploy on every push to main, i.e. every merged PR (SPEC 13.4; owner decision D3 revised
+# 2026-10-16). Tests are not rerun here: ci.yml already ran them on the PR's merge ref.
+#
+# Only the changed parts are deployed, using the same scripts as a laptop deploy, in this order:
+#   firestore.rules / firestore.indexes.json             -> firebase deploy --only firestore:*
+#   backend/, deploy/ (except deploy_web.sh), .gcloudignore -> deploy/scripts/deploy_backend.sh
+#   web/, firebase.json, .firebaserc, deploy_web.sh      -> deploy/scripts/deploy_web.sh
+# then deploy/scripts/smoke_prod.sh. Changes are counted from the last successful push run, so parts
+# of a failed run, or of a run that concurrency replaced while it was queued, are redeployed next time.
+# Re-running an old push run deploys nothing. A direct push to main deploys without any CI run (the
+# private repo's plan has no branch protection), so merge PRs only when ci is green.
+#
+# Keyless auth: Workload Identity Federation -> gh-deployer@ (created by
+# deploy/scripts/setup_ci_deploy.sh; the provider only accepts this file on refs/heads/main).
+# Manual run: Actions -> deploy -> Run workflow (target all | backend | web | firestore).
+# Pause auto deploys: gh workflow disable deploy -R topskill-ai/topskill.
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: What to deploy
+        type: choice
+        options: [all, backend, web, firestore]
+        default: all
+
+permissions:
+  contents: read
+
+# One production deploy at a time; a newer push waits instead of cancelling a deploy halfway.
+concurrency:
+  group: prod-deploy
+  cancel-in-progress: false
+
+env:
+  PROJECT: top-skill
+  WIF_PROVIDER: projects/920441209758/locations/global/workloadIdentityPools/github/providers/topskill-repo
+  DEPLOYER_SA: gh-deployer@top-skill.iam.gserviceaccount.com
+
+jobs:
+  plan:
+    name: plan
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      firestore: ${{ steps.plan.outputs.firestore }}
+      backend: ${{ steps.plan.outputs.backend }}
+      web: ${{ steps.plan.outputs.web }}
+      any: ${{ steps.plan.outputs.any }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          TARGET: ${{ inputs.target }}
+          BEFORE: ${{ github.event.before }}
+          ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          firestore=false backend=false web=false
+          if [[ "${EVENT}" == workflow_dispatch ]]; then
+            case "${TARGET}" in
+              all) firestore=true backend=true web=true ;;
+              backend) backend=true ;;
+              web) web=true ;;
+              firestore) firestore=true ;;
+            esac
+            echo "manual run: ${TARGET}"
+          elif [[ "${ATTEMPT}" != 1 && "$(git ls-remote origin refs/heads/main | cut -f1)" != "${GITHUB_SHA}" ]]; then
+            # Re-running an old push run would diff backwards from the newest deploy and ship old code.
+            echo "re-run of ${GITHUB_SHA}, which is no longer the tip of main: nothing deployed" \
+              "(roll back from the laptop, docs/E2E.md §4)"
+          else
+            base="$(gh run list -R "${GITHUB_REPOSITORY}" --workflow deploy.yml --branch main --event push \
+              --status success --limit 1 --json headSha --jq '.[0].headSha // empty')"
+            base="${base:-${BEFORE}}"
+            if [[ "${base}" =~ ^0*$ ]] || ! git fetch --no-tags --depth=1 origin "${base}" 2>/dev/null; then
+              echo "no usable base commit (${base:-none}); deploying everything"
+              changed=$'firestore.rules\nbackend/\nweb/'
+            else
+              echo "changes since ${base}:"
+              changed="$(git diff --name-only "${base}" "${GITHUB_SHA}")"
+            fi
+            printf '  %s\n' "${changed}"
+            while IFS= read -r f; do
+              case "${f}" in
+                firestore.rules|firestore.indexes.json) firestore=true ;;
+                web/*|firebase.json|.firebaserc|deploy/scripts/deploy_web.sh) web=true ;;
+                backend/*|deploy/*|.gcloudignore) backend=true ;;
+              esac
+            done <<< "${changed}"
+          fi
+          any=false
+          [[ "${firestore}${backend}${web}" == *true* ]] && any=true
+          {
+            echo "firestore=${firestore}"
+            echo "backend=${backend}"
+            echo "web=${web}"
+            echo "any=${any}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Deploy plan: firestore=${firestore} backend=${backend} web=${web}" >> "${GITHUB_STEP_SUMMARY}"
+
+  deploy:
+    name: deploy
+    needs: plan
+    if: needs.plan.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    # deploy_backend.sh may wait up to 15 min for Firestore indexes, then ~5-10 min of Cloud Build.
+    timeout-minutes: 50
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      FIRESTORE: ${{ needs.plan.outputs.firestore }}
+      BACKEND: ${{ needs.plan.outputs.backend }}
+      WEB: ${{ needs.plan.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+      # Writes gha-creds-*.json into the workspace; .gitignore (and through it .gcloudignore) keeps it
+      # out of git status, which deploy_backend.sh requires clean, and out of the Cloud Build upload.
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - uses: actions/setup-node@v4
+        if: env.WEB == 'true' || env.FIRESTORE == 'true'
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install firebase-tools
+        if: env.WEB == 'true' || env.FIRESTORE == 'true'
+        run: npm install -g firebase-tools@15
+      # Indexes go first: deploy_backend.sh waits until every index is READY (docs/E2E.md §4).
+      - name: Firestore rules + indexes
+        if: env.FIRESTORE == 'true'
+        run: firebase deploy --only firestore:rules,firestore:indexes --project "${PROJECT}" --non-interactive
+      - name: Backend (Cloud Build -> Cloud Run)
+        if: env.BACKEND == 'true'
+        run: deploy/scripts/deploy_backend.sh
+      - name: Web (Firebase Hosting)
+        if: env.WEB == 'true'
+        run: deploy/scripts/deploy_web.sh
+      - name: Hosting serves this build
+        if: env.WEB == 'true'
+        run: |
+          for _ in 1 2 3; do
+            if curl -fsS --max-time 20 "https://${PROJECT}.web.app/" | cmp -s - web/dist/index.html; then
+              echo "https://${PROJECT}.web.app serves this build's index.html"; exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::https://${PROJECT}.web.app does not serve this build's index.html"; exit 1
+      - name: Smoke test
+        env:
+          # Optional repository secrets; without them only the public endpoints are checked.
+          SMOKE_EMAIL: ${{ secrets.SMOKE_EMAIL }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+        run: deploy/scripts/smoke_prod.sh

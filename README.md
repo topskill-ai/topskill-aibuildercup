@@ -121,7 +121,10 @@ cd web && npm run typecheck && npm run lint && npm test && npm run build
 
 ## Deploy (production, project `top-skill`)
 
-Deploys run from a laptop with the owner's gcloud / firebase login (CI only runs tests).
+Every merge to `main` deploys automatically (`.github/workflows/deploy.yml`, keyless via Workload Identity
+Federation): only the changed parts (Firestore rules/indexes, backend, web), with the scripts below, then
+`smoke_prod.sh`. CI runs the tests on pull requests only. One-time setup: `deploy/scripts/setup_ci_deploy.sh`.
+The same scripts also run from a laptop with the owner's gcloud / firebase login (hotfix, rollback):
 
 ```bash
 deploy/scripts/provision.sh --yes        # idempotent: APIs, Artifact Registry, bucket, service accounts, IAM, secret

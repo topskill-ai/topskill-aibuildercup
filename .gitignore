@@ -18,6 +18,8 @@ dist/
 *.pem
 *-key.json
 service-account*.json
+# google-github-actions/auth credential config (deploy.yml); also kept out of Cloud Build via .gcloudignore
+gha-creds-*.json
 # Firebase
 .firebase/
 firebase-debug.log

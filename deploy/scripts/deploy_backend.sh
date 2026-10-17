@@ -14,7 +14,7 @@
 # Before building it waits (up to INDEX_WAIT_S, default 900 s) until every Firestore composite and
 # single-field index is READY: a new revision's startup knowledge sweep queries the knowledge.status
 # collection-group index and is skipped if that index is still building. Deploy indexes first.
-# Uses the caller's gcloud login (no WIF, owner decision D3).
+# Uses the caller's gcloud login: the owner's on a laptop, gh-deployer@ (WIF) in .github/workflows/deploy.yml.
 set -euo pipefail
 
 PROJECT="${PROJECT:-top-skill}"
