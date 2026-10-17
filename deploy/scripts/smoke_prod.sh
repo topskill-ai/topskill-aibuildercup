@@ -166,6 +166,7 @@ def preflight(origin: str, allowed: bool) -> None:
 if is_local:
     preflight("http://localhost:5173", allowed=True)
 else:
+    preflight("https://www.openskill.top", allowed=True)
     preflight("https://top-skill.web.app", allowed=True)
     preflight("https://top-skill.firebaseapp.com", allowed=True)
     preflight("https://top-skill--smoke-0000abcd.web.app", allowed=True)

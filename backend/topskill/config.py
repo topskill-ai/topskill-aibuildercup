@@ -100,6 +100,7 @@ class Settings(BaseSettings):
     public_web_base: str = "https://top-skill.web.app"
     cors_origins: CsvList = Field(
         default_factory=lambda: [
+            "https://www.openskill.top",
             "https://top-skill.web.app",
             "https://top-skill.firebaseapp.com",
             "http://localhost:5173",
