@@ -4,7 +4,7 @@ Turn any expert's skill into a paid AI agent in 60 seconds — usable by people 
 
 Built for the Google Cloud AI Builder Cup 2026 (theme: Future of Work & Enterprise Productivity) on Gemini, Agent Development Kit, Cloud Run, Firestore and Firebase.
 
-- Web app: https://top-skill.web.app
+- Web app: https://www.openskill.top
 - API: https://topskill-api-920441209758.asia-southeast1.run.app (`/health`, Agent Cards at `/a2a/{slug}/.well-known/agent-card.json`)
 - Implementation spec: [`docs/SPEC.md`](docs/SPEC.md) · E2E checklist: [`docs/E2E.md`](docs/E2E.md) · Demo script: [`docs/DEMO.md`](docs/DEMO.md) · Calling an agent over A2A: [`docs/A2A.md`](docs/A2A.md)
 
